@@ -70,8 +70,11 @@ export class ZoneOverlayComponent {
         new THREE.MeshBasicMaterial({
           map: cachedLabel(THREE, area.name, hue),
           transparent: true,
-          opacity: 0.55,
+          opacity: 0.6,
           depthWrite: false,
+          // Drawn over the floor rather than fighting it for depth. A slab a
+          // few centimetres above a scanned floor z-fights badly, and in plan
+          // view it would flicker in and out as the camera moves.
           depthTest: false,
           side: THREE.DoubleSide,
           toneMapped: false,
@@ -79,7 +82,10 @@ export class ZoneOverlayComponent {
       );
 
       slab.rotation.set(-Math.PI / 2, 0, (buildingAngle * Math.PI) / 180);
-      slab.position.set((a.x + b.x) / 2, Math.max(a.y, b.y) + 0.03, (a.z + b.z) / 2);
+      // Just above the floor the corners were recorded at. Averaging the two
+      // rather than taking the higher one keeps a slab flat when a zone spans a
+      // slight change in level.
+      slab.position.set((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.04, (a.z + b.z) / 2);
       slab.renderOrder = 20;
       this.root.add(slab);
     });

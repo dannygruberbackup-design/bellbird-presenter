@@ -593,7 +593,10 @@ function wireAreaAuthoring(mpSdk: any): void {
     // exists by the time anyone drags on it.
     window.setTimeout(() => {
       const circles = allSweeps();
-      floorY = circles.length ? circles[0].y : 0;
+      // Floor height comes from the presenter, not from a sweep: a sweep records
+      // where the capture camera stood, which is eye level. Slabs placed at that
+      // height float at chest height in the walkthrough.
+      floorY = handles[0]?.getPosition().y ?? 0;
       toWorld = calibrate(mpSdk, pose, circles);
       status.textContent = toWorld
         ? `Drag across ${chosen().name}.`

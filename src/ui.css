@@ -63,9 +63,10 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
 #station-list .call.ready { opacity:1; }
 #walkthrough { border-color:var(--tally) !important; text-align:center !important; margin-top:0.4rem; }
 #station-list:empty::after { content:"No stops placed yet."; display:block; font-size:0.78rem; color:rgba(232,230,225,0.55); }
-/* Swallows the drag so Matterport cannot pan the plan underneath it. Only
-   present while drawing zones. */
-#draw-layer { position:fixed; inset:0; z-index:35; cursor:crosshair; touch-action:none; }
+/* Swallows the drag so Matterport cannot pan the plan underneath it.
+   Deliberately below every panel: the layer only has to cover the viewer, and
+   at a higher z-index it also covered the controls you need while drawing. */
+#draw-layer { position:fixed; inset:0; z-index:10; cursor:crosshair; touch-action:none; }
 #draw-rect { position:absolute; border:2px solid var(--tally); background:rgba(224,54,44,0.18); pointer-events:none; }
 #diag-panel { position:fixed; left:0.75rem; right:0.75rem; bottom:0.75rem; max-height:34vh; display:flex; flex-direction:column; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:rgba(11,15,20,0.94); backdrop-filter:blur(14px); z-index:60; }
 #diag-panel header { display:flex; align-items:center; gap:0.5rem; padding:0.6rem 0.75rem; border-bottom:1px solid rgba(232,230,225,0.12); }
