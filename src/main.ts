@@ -588,21 +588,25 @@ function wireAreaAuthoring(mpSdk: any): void {
       return;
     }
 
-    // Calibrate after the view has settled: the plan slides and scales into
-    // place, and a mapping solved mid-animation describes a view that no longer
-    // exists by the time anyone drags on it.
-    window.setTimeout(() => {
-      const circles = allSweeps();
-      // Floor height comes from the presenter, not from a sweep: a sweep records
-      // where the capture camera stood, which is eye level. Slabs placed at that
-      // height float at chest height in the walkthrough.
-      floorY = handles[0]?.getPosition().y ?? 0;
-      toWorld = calibrate(mpSdk, pose, circles);
-      status.textContent = toWorld
-        ? `Drag across ${chosen().name}.`
-        : 'Could not map the plan. Tell me and I will use another route.';
-      if (!toWorld) diag.warn('Plan mapping failed.');
-    }, 900);
+    status.textContent = `Drag across ${chosen().name}.`;
+  };
+
+  /**
+   * Solves the screen-to-floor mapping for the view as it is right now.
+   *
+   * Done at the start of every drag rather than once on entering the mode.
+   * Solved once, the mapping goes stale the moment the plan is panned or
+   * zoomed, and a box then lands somewhere other than where it was drawn -
+   * with nothing on screen to say why. Twelve points and a 3x3 solve is a
+   * fraction of a millisecond, which is a cheap price for never being wrong.
+   */
+  const remap = (): boolean => {
+    // Floor height comes from the presenter, not from a sweep: a sweep records
+    // where the capture camera stood, which is eye level.
+    floorY = handles[0]?.getPosition().y ?? 0;
+    toWorld = calibrate(mpSdk, pose, allSweeps());
+    if (!toWorld) diag.warn('Plan mapping failed.');
+    return Boolean(toWorld);
   };
 
   draw.addEventListener('click', () => void setDrawing(!drawing));
@@ -617,6 +621,10 @@ function wireAreaAuthoring(mpSdk: any): void {
 
   layer.addEventListener('pointerdown', (event) => {
     if (!drawing) return;
+    if (!remap()) {
+      status.textContent = 'Could not map the plan. Tell me and I will use another route.';
+      return;
+    }
     layer.setPointerCapture(event.pointerId);
     from = { x: event.clientX, y: event.clientY };
     paintRect(from, from);
@@ -637,13 +645,12 @@ function wireAreaAuthoring(mpSdk: any): void {
     from = null;
     rect.hidden = true;
 
-    if (!toWorld) {
-      status.textContent = 'The plan is not mapped yet \u2014 try again in a moment.';
-      return;
-    }
+    // Set by remap() at pointerdown, and the drag cannot start without it.
+    const convert = toWorld;
+    if (!convert) return;
 
-    const a = toWorld(started);
-    const b = toWorld(to);
+    const a = convert(started);
+    const b = convert(to);
     const span = Math.hypot(a.x - b.x, a.z - b.z);
 
     // A stray tap would otherwise leave a zone the size of a coin, which then
