@@ -38,25 +38,28 @@ export function subscribeSweeps(mpSdk: any): void {
     return;
   }
 
-  const take = (sweep: any) => {
+  // The collection is keyed by sweep id, and the key is the more reliable
+  // source: the item's own id field has moved between bundle versions, and an
+  // empty id means Sweep.moveTo silently does nothing — which reads as
+  // "selecting a zone doesn't take me there".
+  const take = (sweep: any, key?: string) => {
     const p = sweep?.position;
-    // The id is what Sweep.moveTo needs; without it a station can be found but
-    // not travelled to.
     if (p && typeof p.x === 'number') {
-      sweeps.push({ x: p.x, y: p.y, z: p.z, sid: sweep.sid ?? sweep.id ?? '' });
+      sweeps.push({ x: p.x, y: p.y, z: p.z, sid: key ?? sweep.sid ?? sweep.id ?? '' });
     }
   };
 
   const readCollection = (collection: any) => {
     sweeps.length = 0;
-    for (const key of Object.keys(collection ?? {})) take(collection[key]);
-    diag.info(`${sweeps.length} floor circles found.`);
+    for (const key of Object.keys(collection ?? {})) take(collection[key], key);
+    const withIds = sweeps.filter((s) => s.sid).length;
+    diag.info(`${sweeps.length} floor circles found, ${withIds} with ids.`);
   };
 
   try {
     data.subscribe({
-      onAdded(_index: any, item: any) {
-        take(item);
+      onAdded(index: any, item: any) {
+        take(item, typeof index === 'string' ? index : undefined);
       },
       onCollectionUpdated: readCollection,
     });

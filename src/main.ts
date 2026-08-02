@@ -319,7 +319,10 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
 
   const travel = async (area: Area) => {
     const centre = areaCentre(areaState(area.id));
-    if (!centre) return;
+    if (!centre) {
+      diag.warn(`${area.name} has no position.`);
+      return;
+    }
     close();
     await goToStation(mpSdk, { handle: handles[0], label: area.name }, () => {}, centre);
   };
@@ -415,6 +418,18 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
     const showing = expanded || here.length > 0;
     empty.hidden = showing;
   };
+
+  // Repainted whether or not the menu is open: the Areas button itself is the
+  // ambient answer to "where am I", and this timer was lost in the rewrite that
+  // split building the list from painting it.
+  window.setInterval(() => {
+    if (!panel.hidden) paint();
+
+    const from = handles[0]?.component.viewerPosition();
+    const nearest = from ? areasAt(from)[0] : null;
+    toggle.textContent = nearest ? nearest.name : 'Areas';
+    toggle.classList.toggle('here', Boolean(nearest));
+  }, 250);
 
   expand?.addEventListener('click', () => {
     expanded = !expanded;
