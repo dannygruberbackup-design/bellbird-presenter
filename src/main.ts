@@ -4,7 +4,7 @@ import './three-global';
 import '@matterport/webcomponent';
 import './ui.css';
 
-import { spawnPresenters, type PresenterHandle } from './scene';
+import { spawnPresenters, spawnZoneOverlay, type PresenterHandle } from './scene';
 import { createDirector } from './presenter-director';
 import { createCaptionController } from './captions';
 import { createPlacementMode } from './placement';
@@ -15,6 +15,7 @@ import { connectSdk } from './connect';
 import { saveVideo, loadVideo, clearVideo } from './video-store';
 import { subscribeSweeps, nearestSweep } from './sweeps';
 import { goToStation, lookAt } from './stations';
+import type { ZoneOverlayComponent } from './zone-overlay';
 import {
   AREAS,
   areasAt,
@@ -105,7 +106,7 @@ async function main() {
   await restoreSavedVideos();
   diag.info('Ready.');
 
-  if (IS_DEV) enableDevTools(mpSdk, director);
+  if (IS_DEV) void enableDevTools(mpSdk, director);
 }
 
 // ---------------------------------------------------------------- summoning
@@ -469,7 +470,14 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
 // same information gathered the way the space actually reads — and it snaps to
 // the circle you are standing on, so the saved point is always somewhere a
 // visitor can be sent.
-function wireAreaAuthoring(): void {
+/** The slabs, once the scene has them. Null until then, and for visitors. */
+let overlay: ZoneOverlayComponent | null = null;
+
+export function refreshZoneOverlay(): void {
+  overlay?.rebuild(placedAreas(), buildingAngle());
+}
+
+function wireAreaAuthoring(mpSdk: any): void {
   const picker = document.querySelector('#area-pick') as HTMLSelectElement;
   const cornerA = document.querySelector('#area-corner-a') as HTMLButtonElement;
   const cornerB = document.querySelector('#area-corner-b') as HTMLButtonElement;
@@ -518,6 +526,7 @@ function wireAreaAuthoring(): void {
     saveArea(chosen().id, { [which]: point });
     diag.info(`${chosen().name}: ${which === 'cornerA' ? 'A' : 'B'} set.`);
     show();
+    refreshZoneOverlay();
   };
 
   cornerA.addEventListener('click', () => capture('cornerA'));
@@ -527,6 +536,7 @@ function wireAreaAuthoring(): void {
     saveArea(chosen().id, { cornerA: undefined, cornerB: undefined });
     diag.info(`${chosen().name}: unplaced.`);
     show();
+    refreshZoneOverlay();
   });
 
   // One angle for the whole building rather than a rotation per zone. The plan
@@ -537,12 +547,75 @@ function wireAreaAuthoring(): void {
     const degrees = Number(angle.value);
     angleOut.textContent = `${degrees.toFixed(1)}\u00b0`;
     setBuildingAngle(degrees);
+    refreshZoneOverlay();
   });
 
   assign.addEventListener('click', () => {
     const input = document.querySelector('#video-file') as HTMLInputElement;
     assigningTo = chosen().id;
     input.click();
+  });
+
+  // Drawing zones on the floor plan.
+  //
+  // Walking to every corner of nineteen zones is an evening's work; the plan
+  // view already shows the whole building at once, and a tap there returns a
+  // real world position. Corners here are deliberately NOT snapped to floor
+  // circles: a zone edge usually runs along a wall, where nobody ever stood.
+  const draw = document.querySelector('#area-draw') as HTMLButtonElement;
+  let drawing = false;
+  let next: 'cornerA' | 'cornerB' = 'cornerA';
+  let hit: { position: { x: number; y: number; z: number } } | null = null;
+
+  mpSdk?.Pointer?.intersection?.subscribe?.((intersection: any) => {
+    hit = intersection;
+  });
+
+  const setDrawing = async (on: boolean) => {
+    drawing = on;
+    draw.setAttribute('aria-pressed', String(on));
+    draw.textContent = on ? 'Done drawing' : 'Draw on floor plan';
+    document.body.classList.toggle('placement-active', on);
+
+    try {
+      const mode = on ? mpSdk?.Mode?.Mode?.FLOORPLAN : mpSdk?.Mode?.Mode?.INSIDE;
+      if (mode) await mpSdk.Mode.moveTo(mode);
+    } catch {
+      diag.warn('Could not switch view; draw from wherever you are.');
+    }
+
+    if (on) {
+      next = 'cornerA';
+      status.textContent = `Tap corner A of ${chosen().name}.`;
+      refreshZoneOverlay();
+    } else {
+      show();
+    }
+  };
+
+  draw.addEventListener('click', () => void setDrawing(!drawing));
+
+  window.addEventListener('pointerdown', (event) => {
+    if (!drawing || !hit) return;
+    if ((event.target as HTMLElement)?.closest('[data-ui]')) return;
+
+    const point = { x: hit.position.x, y: hit.position.y, z: hit.position.z };
+    saveArea(chosen().id, { [next]: point });
+    refreshZoneOverlay();
+
+    if (next === 'cornerA') {
+      next = 'cornerB';
+      status.textContent = `Now tap the opposite corner of ${chosen().name}.`;
+    } else {
+      next = 'cornerA';
+      // Step to the next unplaced zone automatically: nineteen zones is a lot
+      // of dropdown, and the order on the plan is the order you would walk.
+      const remaining = AREAS.find((a) => !isPlaced(areaState(a.id)));
+      if (remaining) picker.value = remaining.id;
+      status.textContent = remaining
+        ? `Saved. Tap corner A of ${chosen().name}.`
+        : `All ${AREAS.length} zones placed.`;
+    }
   });
 
   show();
@@ -567,10 +640,14 @@ function wireRoleToggle(): void {
   });
 }
 
-function enableDevTools(mpSdk: any, director: ReturnType<typeof createDirector>) {
+async function enableDevTools(mpSdk: any, director: ReturnType<typeof createDirector>) {
   devPanel.hidden = false;
+
+  // Only authors get the slabs. They are a drawing aid, not part of the tour.
+  overlay = await spawnZoneOverlay(mpSdk);
+  refreshZoneOverlay();
   wireRoleToggle();
-  wireAreaAuthoring();
+  wireAreaAuthoring(mpSdk);
 
   const placement = createPlacementMode(
     mpSdk,

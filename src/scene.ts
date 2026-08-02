@@ -6,6 +6,7 @@ import {
   type ChromaPresenterComponent,
 } from './presenter-component';
 import { setSdk } from './camera-source';
+import { ZONE_OVERLAY_COMPONENT, zoneOverlayFactory, type ZoneOverlayComponent } from './zone-overlay';
 import { diag, describeError } from './diagnostics';
 
 import type { DirectorOptions } from './presenter-director';
@@ -138,6 +139,34 @@ export async function spawnPresenters(
   sceneObject.start();
   diag.info(`${handles.length} presenter(s) started.`);
   return handles;
+}
+
+/**
+ * A second scene object purely for the zone slabs.
+ *
+ * Separate from the presenters because it is torn down and rebuilt every time a
+ * corner moves, and restarting the object the guide lives on would rebuild her
+ * video with it.
+ */
+export async function spawnZoneOverlay(mpSdk: any): Promise<ZoneOverlayComponent | null> {
+  try {
+    if (typeof mpSdk?.Scene?.registerComponents === 'function') {
+      await mpSdk.Scene.registerComponents([
+        { name: ZONE_OVERLAY_COMPONENT, factory: zoneOverlayFactory },
+      ]);
+    } else {
+      await mpSdk.Scene.register(ZONE_OVERLAY_COMPONENT, zoneOverlayFactory);
+    }
+
+    const [object] = await mpSdk.Scene.createObjects(1);
+    const node = object.addNode();
+    const component = node.addComponent(ZONE_OVERLAY_COMPONENT) as ZoneOverlayComponent;
+    object.start();
+    return component;
+  } catch (error) {
+    diag.warn(`Zone overlay unavailable: ${describeError(error)}`);
+    return null;
+  }
 }
 
 export function addLightRig(sceneObject: any): void {
