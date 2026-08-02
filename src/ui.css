@@ -47,15 +47,20 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
 /* The Areas button names the zone you are in, so it needs to read as live
    rather than as one more control. */
 #controls #stations-toggle.here { border-color:var(--tally); background:rgba(224,54,44,0.18); }
-#stations { position:fixed; right:1rem; top:4.5rem; width:min(15rem,calc(100vw - 2rem)); max-height:60dvh; overflow:auto; padding:0.8rem; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:var(--scrim); backdrop-filter:blur(14px); z-index:26; }
+/* Two columns, so all nineteen zones are on screen at once. Scrolling a list
+   of places you might go defeats the point of offering them. */
+#stations { position:fixed; right:1rem; top:4.5rem; width:min(25rem,calc(100vw - 2rem)); max-height:calc(100dvh - 6rem); overflow:auto; padding:0.8rem; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:var(--scrim); backdrop-filter:blur(14px); z-index:26; }
 #stations .group { margin:0 0 0.5rem; font-size:0.66rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:rgba(232,230,225,0.5); }
-#station-list { margin:0; padding:0; list-style:none; }
+#station-list { display:grid; grid-template-columns:1fr 1fr; gap:0.3rem; margin:0 0 0.5rem; padding:0; list-style:none; }
+@media (max-width: 30rem) { #station-list { grid-template-columns:1fr; } }
 /* Name and guide button share a row: the name is the place, the button is the
    person. Splitting them into two lists would double the height for no gain. */
-#station-list li { display:flex; gap:0.35rem; margin-bottom:0.35rem; }
-#stations button { min-height:42px; padding:0.45rem 0.7rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:transparent; color:var(--mist); font:500 0.82rem var(--ui-sans); text-align:left; cursor:pointer; }
-#station-list .go { flex:1; }
-#station-list .call { flex:0 0 auto; width:44px; text-align:center; font-size:1rem; line-height:1; }
+#station-list li { display:flex; gap:0.25rem; margin:0; min-width:0; }
+#stations button { min-height:38px; padding:0.35rem 0.5rem; border:1px solid rgba(232,230,225,0.18); border-radius:6px; background:transparent; color:var(--mist); font:500 0.72rem/1.25 var(--ui-sans); text-align:left; cursor:pointer; }
+/* Names wrap rather than truncate: "Toddlers (12mths-2yrs)" cut short reads as
+   a different zone from the one on the plan. */
+#station-list .go { flex:1; min-width:0; overflow-wrap:anywhere; }
+#station-list .call { flex:0 0 auto; width:34px; padding:0.2rem; text-align:center; font-size:0.8rem; line-height:1; }
 /* Lit while you are standing in that area. The tally red is already the
    project's "on air" colour, so it needs no explaining. */
 #station-list li.here .go { border-color:var(--tally); color:#fff; background:rgba(224,54,44,0.16); }
@@ -64,7 +69,7 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
    plainly which zone you are standing in. */
 #station-list .call { opacity:0.45; }
 #station-list .call.ready { opacity:1; }
-#walkthrough { border-color:var(--tally) !important; text-align:center !important; margin-top:0.4rem; }
+#walkthrough { width:100%; border-color:var(--tally) !important; text-align:center !important; margin-top:0.2rem; }
 #station-list:empty::after { content:"No stops placed yet."; display:block; font-size:0.78rem; color:rgba(232,230,225,0.55); }
 /* Swallows the drag so Matterport cannot pan the plan underneath it.
    Deliberately below every panel: the layer only has to cover the viewer, and

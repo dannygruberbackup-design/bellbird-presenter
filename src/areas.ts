@@ -166,8 +166,23 @@ export function distanceToArea(point: { x: number; z: number }, state: AreaState
 
 /** How far from a display still counts as being at it, in metres. */
 export function aisleReach(): number {
-  return cache.aisleReach ?? 2;
+  return cache.aisleReach ?? 1.5;
 }
+
+/**
+ * How much further than the nearest display still counts as being there too.
+ *
+ * An absolute reach alone is not enough. Standing in an open aisle by the front
+ * door, five displays sit within two metres and all five light up, which tells
+ * a visitor nothing they did not already know. What they mean by "here" is the
+ * thing they are next to, plus anything genuinely alongside it — not everything
+ * in the room that happens to be within arm's reach of the aisle.
+ *
+ * So a zone lights only if it is within reach AND within this margin of the
+ * closest one. Stand at a display and it alone lights; stand between two and
+ * both do.
+ */
+const COMPANION_MARGIN = 0.9;
 
 export function setAisleReach(metres: number): void {
   cache.aisleReach = metres;
@@ -183,10 +198,16 @@ export function setAisleReach(metres: number): void {
  * the likeliest first without hiding the rest.
  */
 export function areasAt(point: { x: number; z: number }): Area[] {
-  return placedAreas()
+  const within = placedAreas()
     .map(({ area, state }) => ({ area, distance: distanceToArea(point, state) }))
     .filter((entry) => entry.distance <= aisleReach())
-    .sort((a, b) => a.distance - b.distance)
+    .sort((a, b) => a.distance - b.distance);
+
+  if (within.length === 0) return [];
+
+  const nearest = within[0].distance;
+  return within
+    .filter((entry) => entry.distance <= nearest + COMPANION_MARGIN)
     .map((entry) => entry.area);
 }
 
