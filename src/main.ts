@@ -15,6 +15,7 @@ import { connectSdk } from './connect';
 import { saveVideo, loadVideo, clearVideo } from './video-store';
 import { subscribeSweeps, nearestSweep, allSweeps } from './sweeps';
 import { calibrate, type ScreenToWorld } from './plan-mapping';
+import { checkZones, exportZones } from './zone-check';
 import { goToStation, lookAt } from './stations';
 import type { ZoneOverlayComponent } from './zone-overlay';
 import {
@@ -539,6 +540,23 @@ function wireAreaAuthoring(mpSdk: any): void {
     angleOut.textContent = `${degrees.toFixed(1)}\u00b0`;
     setBuildingAngle(degrees);
     refreshZoneOverlay();
+  });
+
+  document.querySelector('#area-check')?.addEventListener('click', () => {
+    const findings = checkZones(allSweeps());
+    for (const finding of findings) diag[finding.level === 'ok' ? 'info' : finding.level](finding.text);
+    const faults = findings.filter((f) => f.level === 'error').length;
+    status.textContent = faults
+      ? `${faults} problem${faults === 1 ? '' : 's'} \u2014 see Diagnostics.`
+      : 'Zones check out. See Diagnostics for detail.';
+  });
+
+  document.querySelector('#area-export')?.addEventListener('click', () => {
+    const json = exportZones();
+    navigator.clipboard
+      ?.writeText(json)
+      .then(() => diag.info('Zone map copied.'))
+      .catch(() => diag.warn('Clipboard blocked. Map: ' + json));
   });
 
   assign.addEventListener('click', () => {
