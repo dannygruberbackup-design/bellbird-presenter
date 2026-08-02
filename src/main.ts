@@ -323,7 +323,20 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       return;
     }
     close();
-    await goToStation(mpSdk, { handle: handles[0], label: area.name }, () => {}, centre);
+
+    await goToStation(
+      mpSdk,
+      { handle: handles[0], label: area.name },
+      () => {
+        // Arriving is only half of it. The sweep nearest a zone is often beside
+        // or behind the display, so landing there without turning leaves you
+        // looking at whatever the last camera angle happened to be - which,
+        // having just asked to be taken to Music, is not Music.
+        const from = handles[0]?.component.viewerPosition();
+        if (from) void lookAt(mpSdk, centre, from);
+      },
+      centre,
+    );
   };
 
   // Travel then speak, in one tap. The two-step is still there for anyone
