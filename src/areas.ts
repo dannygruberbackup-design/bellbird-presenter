@@ -80,6 +80,8 @@ type Stored = {
   aisleReach?: number;
 };
 
+import { PUBLISHED } from './areas.published';
+
 const KEY = 'presenter.areas.v2';
 
 let cache: Stored = read();
@@ -102,8 +104,16 @@ function persist(): void {
   }
 }
 
+/**
+ * A zone's placement: what you have drawn here, or what shipped with the build.
+ *
+ * Local first so authoring is immediate, published underneath so a browser that
+ * has never drawn anything still knows where the zones are. Merged rather than
+ * chosen between, so redrawing a rectangle does not silently discard the
+ * captured view that came with it.
+ */
 export function areaState(id: AreaId): AreaState {
-  return cache.byArea[id] ?? {};
+  return { ...(PUBLISHED.byArea[id] ?? {}), ...(cache.byArea[id] ?? {}) };
 }
 
 export function saveArea(id: AreaId, patch: AreaState): void {
@@ -112,7 +122,7 @@ export function saveArea(id: AreaId, patch: AreaState): void {
 }
 
 export function buildingAngle(): number {
-  return cache.buildingAngle ?? 0;
+  return cache.buildingAngle ?? PUBLISHED.buildingAngle ?? 0;
 }
 
 export function setBuildingAngle(degrees: number): void {
@@ -136,6 +146,31 @@ export function isPlaced(state: AreaState): boolean {
 }
 
 /** Areas you have actually placed. The rest are not somewhere to send anyone. */
+/** Replaces everything drawn here with a map exported from another browser. */
+export function importMap(json: string): number {
+  const parsed = JSON.parse(json) as {
+    buildingAngle?: number;
+    aisleReach?: number;
+    zones?: ({ id: AreaId } & AreaState)[];
+    byArea?: Record<AreaId, AreaState>;
+  };
+
+  const byArea: Record<AreaId, AreaState> = {};
+  if (parsed.byArea) Object.assign(byArea, parsed.byArea);
+  for (const zone of parsed.zones ?? []) {
+    const { id, ...rest } = zone;
+    byArea[id] = rest;
+  }
+
+  cache = {
+    byArea,
+    buildingAngle: parsed.buildingAngle,
+    aisleReach: parsed.aisleReach,
+  };
+  persist();
+  return Object.keys(byArea).length;
+}
+
 export function placedAreas(): { area: Area; state: AreaState }[] {
   return AREAS.map((area) => ({ area, state: areaState(area.id) })).filter((entry) =>
     isPlaced(entry.state),
@@ -216,7 +251,7 @@ function facingPenalty(
 
 /** How far from a display still counts as being at it, in metres. */
 export function aisleReach(): number {
-  return cache.aisleReach ?? 1.5;
+  return cache.aisleReach ?? PUBLISHED.aisleReach ?? 1.5;
 }
 
 /**

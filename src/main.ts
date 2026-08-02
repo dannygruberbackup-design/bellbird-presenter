@@ -30,6 +30,7 @@ import {
   setBuildingAngle,
   aisleReach,
   setAisleReach,
+  importMap,
   type Area,
 } from './areas';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
@@ -858,6 +859,19 @@ function wireAreaAuthoring(mpSdk: any): void {
     status.textContent = faults
       ? `${faults} problem${faults === 1 ? '' : 's'} \u2014 see Diagnostics.`
       : 'Zones check out. See Diagnostics for detail.';
+  });
+
+  document.querySelector('#area-import')?.addEventListener('click', () => {
+    const box = document.querySelector('#area-import-text') as HTMLTextAreaElement;
+    try {
+      const count = importMap(box.value);
+      box.value = '';
+      diag.info(`${count} zones loaded.`);
+      show();
+      refreshZoneOverlay();
+    } catch (error) {
+      diag.error(`That is not a zone map: ${describeError(error)}`);
+    }
   });
 
   document.querySelector('#area-export')?.addEventListener('click', () => {

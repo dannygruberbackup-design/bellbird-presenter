@@ -29,6 +29,7 @@ matterport-viewer { display:block; width:100vw; height:100dvh; }
 #dev-panel button[aria-pressed='true'] { border-color:var(--tally); }
 .field { display:block; margin-bottom:0.5rem; }
 .field > span { display:block; margin-bottom:0.25rem; font-size:0.74rem; color:rgba(232,230,225,0.78); }
+.field textarea { width:100%; padding:0.35rem 0.5rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:transparent; color:var(--mist); font:500 0.7rem var(--ui-mono); resize:vertical; }
 .field select { width:100%; min-height:38px; padding:0.35rem 0.5rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:var(--ink); color:var(--mist); font:500 0.82rem var(--ui-sans); }
 #area-status { margin:0 0 0.4rem; font-size:0.72rem; }
 .field input { width:100%; min-height:38px; padding:0.35rem 0.6rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:transparent; color:var(--mist); font:500 0.82rem var(--ui-sans); }

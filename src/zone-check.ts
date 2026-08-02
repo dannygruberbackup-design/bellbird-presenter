@@ -163,6 +163,7 @@ export function exportZones(): string {
   return JSON.stringify(
     {
       buildingAngle: buildingAngle(),
+      aisleReach: aisleReach(),
       zones: AREAS.filter((area) => isPlaced(areaState(area.id))).map((area) => ({
         id: area.id,
         name: area.name,
