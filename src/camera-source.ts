@@ -1,5 +1,5 @@
 import { diag } from './diagnostics';
-import { CAMERA_SOURCE, IS_DEV } from './config';
+import { CAMERA_SOURCE } from './config';
 
 export type CameraSource = {
   readonly mode: 'context' | 'pose' | 'unavailable';
@@ -38,9 +38,6 @@ function createCameraSource(THREE: any, context: any, mpSdk: any): CameraSource 
   const contextCamera = context?.camera;
   const posed = mpSdk?.Camera?.pose?.subscribe ? subscribePose(THREE, mpSdk) : null;
 
-  if (IS_DEV && posed && contextCamera?.position) {
-    startCameraAudit(contextCamera, posed);
-  }
 
   if (CAMERA_SOURCE === 'pose' && posed) return posed;
 
@@ -99,41 +96,3 @@ function subscribePose(THREE: any, mpSdk: any): CameraSource {
   };
 }
 
-const probe = {
-  x: 0,
-  y: 0,
-  z: 0,
-  copy(v: any) {
-    this.x = v.x;
-    this.y = v.y;
-    this.z = v.z;
-    return this;
-  },
-};
-
-function startCameraAudit(contextCamera: any, posed: CameraSource): void {
-  let last = '';
-  let changes = 0;
-
-  window.setInterval(() => {
-    const c = contextCamera.position;
-    const havePose = posed.copyPositionInto(probe);
-
-    const signature = `${c.x.toFixed(2)},${c.z.toFixed(2)}`;
-    if (signature !== last) changes += 1;
-    last = signature;
-
-    const apart = havePose
-      ? Math.hypot(c.x - probe.x, c.y - probe.y, c.z - probe.z)
-      : NaN;
-
-    diag.info(
-      `camera: context (${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)})` +
-        (havePose
-          ? ` | pose (${probe.x.toFixed(2)}, ${probe.y.toFixed(2)}, ${probe.z.toFixed(2)})` +
-            ` | apart ${apart.toFixed(2)}m`
-          : ' | pose not received') +
-        ` | moved ${changes}x`,
-    );
-  }, 4000);
-}
