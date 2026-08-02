@@ -16,7 +16,7 @@ import { saveVideo, loadVideo, clearVideo } from './video-store';
 import { subscribeSweeps, nearestSweep, allSweeps } from './sweeps';
 import { calibrate, type ScreenToWorld } from './plan-mapping';
 import { checkZones, exportZones } from './zone-check';
-import { goToStation, lookAt, bestSpotFor } from './stations';
+import { goToStation, lookAt, bestSpotFor, goToAuthoredView } from './stations';
 import type { ZoneOverlayComponent } from './zone-overlay';
 import {
   AREAS,
@@ -89,6 +89,9 @@ async function main() {
 
   const mpSdk = await stage('Connecting to the viewer', () => connectSdk(viewer));
   subscribeSweeps(mpSdk);
+  mpSdk?.Camera?.pose?.subscribe?.((pose: any) => {
+    lastPose = pose;
+  });
 
   handles = await stage('Placing the presenters', () =>
     spawnPresenters(mpSdk, PRESENTERS, WANT_LIGHTS),
@@ -317,12 +320,17 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   };
 
   const travel = async (area: Area) => {
-    const centre = areaCentre(areaState(area.id));
+    const state = areaState(area.id);
+    const centre = areaCentre(state);
     if (!centre) {
       diag.warn(`${area.name} has no position.`);
       return;
     }
     close();
+
+    // An authored view wins outright. Everything below it is the fallback for
+    // zones nobody has framed yet.
+    if (await goToAuthoredView(mpSdk, state)) return;
 
     await goToStation(
       mpSdk,
@@ -344,9 +352,28 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   // someone who already knows what they want should not have to tap twice for
   // the same outcome.
   const call = async (area: Area) => {
-    const centre = areaCentre(areaState(area.id));
+    const state = areaState(area.id);
+    const centre = areaCentre(state);
     if (!centre) return;
     close();
+
+    // Same viewpoint as travelling there, then she appears in it.
+    if (await goToAuthoredView(mpSdk, state)) {
+      await useAreaClip(area);
+      const handle = handles[0];
+      const from = handle?.component.viewerPosition();
+      const spot =
+        state.guideAt ??
+        (from ? bestSpotFor(area, from, aisleReach(), loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET) : null);
+      if (handle && spot) {
+        handle.component.setVisible(true);
+        handle.setPosition(spot);
+        saveFor(handle.id, { position: spot, visible: true });
+      }
+      director.unmute();
+      director.replay(handles[0].id);
+      return;
+    }
 
     await goToStation(
       mpSdk,
@@ -363,7 +390,7 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
         // metres from the visitor would have her describing a shelf she has her
         // back to.
         const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
-        const spot = bestSpotFor(area, from, aisleReach(), floorOffset);
+        const spot = state.guideAt ?? bestSpotFor(area, from, aisleReach(), floorOffset);
         if (spot) {
           handle.component.setVisible(true);
           handle.setPosition(spot);
@@ -464,7 +491,7 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   /** Marks the zones you are in within the full list. */
   const paint = () => {
     const from = handles[0]?.component.viewerPosition();
-    const here = from ? areasAt(from) : [];
+    const here = from ? areasAt(from, lastPose?.rotation?.y) : [];
     const ids = here.map((a) => a.id);
 
     for (const row of rows) {
@@ -573,6 +600,9 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
 /** The slabs, once the scene has them. Null until then, and for visitors. */
 let overlay: ZoneOverlayComponent | null = null;
 
+/** The viewer's latest pose: needed for facing, capture and travel alike. */
+let lastPose: any = null;
+
 /** Which zone the author has selected, so the overlay can mark it out. */
 let selectedZone: string | null = null;
 
@@ -614,9 +644,15 @@ function wireAreaAuthoring(mpSdk: any): void {
     selectedZone = chosen().id;
     const state = areaState(chosen().id);
     const done = placedAreas().length;
-    status.textContent = isPlaced(state)
-      ? `${chosen().name} is placed. Drag to redraw it. ${done} of ${AREAS.length} set.`
-      : `${chosen().name} not placed. ${done} of ${AREAS.length} set.`;
+    const marks = [
+      isPlaced(state) ? 'zone' : null,
+      state.viewSweep ? 'view' : null,
+      state.guideAt ? 'guide' : null,
+      state.hasVideo ? 'clip' : null,
+    ].filter(Boolean);
+    status.textContent = marks.length
+      ? `${chosen().name}: ${marks.join(', ')}. ${done} of ${AREAS.length} zones drawn.`
+      : `${chosen().name}: nothing set yet. ${done} of ${AREAS.length} zones drawn.`;
     angle.value = String(buildingAngle());
     angleOut.textContent = `${buildingAngle().toFixed(1)}\u00b0`;
     markPlaced();
@@ -657,6 +693,41 @@ function wireAreaAuthoring(mpSdk: any): void {
     refreshZoneOverlay();
   });
 
+  // Authored viewpoints.
+  //
+  // Stand where a visitor should land, look where they should look, press the
+  // button. Everything the automatic version was guessing at - which side of a
+  // display reads best, which circle has a pillar in the way - is decided by
+  // someone who can see it.
+  document.querySelector('#area-view')?.addEventListener('click', () => {
+    const pose = lastPose;
+    if (!pose?.sweep) {
+      diag.warn('No sweep underfoot to capture.');
+      return;
+    }
+    saveArea(chosen().id, {
+      viewSweep: pose.sweep,
+      viewYaw: pose.rotation?.y ?? 0,
+      viewPitch: pose.rotation?.x ?? 0,
+    });
+    diag.info(`${chosen().name}: view captured.`);
+    show();
+  });
+
+  document.querySelector('#area-guide')?.addEventListener('click', () => {
+    const from = handles[0]?.component.viewerPosition();
+    if (!from) {
+      diag.warn('No position yet.');
+      return;
+    }
+    // Her feet, not the camera: you are standing where she should stand, and
+    // the camera is at your eye level.
+    const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
+    saveArea(chosen().id, { guideAt: { x: from.x, y: from.y - floorOffset, z: from.z } });
+    diag.info(`${chosen().name}: guide spot set.`);
+    show();
+  });
+
   document.querySelector('#area-check')?.addEventListener('click', () => {
     const findings = checkZones(allSweeps());
     for (const finding of findings) diag[finding.level === 'ok' ? 'info' : finding.level](finding.text);
@@ -694,12 +765,6 @@ function wireAreaAuthoring(mpSdk: any): void {
   let toWorld: ScreenToWorld | null = null;
   let from: { x: number; y: number } | null = null;
   let floorY = 0;
-  let pose: any = null;
-
-  mpSdk?.Camera?.pose?.subscribe?.((next: any) => {
-    pose = next;
-  });
-
   const setDrawing = async (on: boolean) => {
     drawing = on;
     from = null;
@@ -737,7 +802,7 @@ function wireAreaAuthoring(mpSdk: any): void {
     // Floor height comes from the presenter, not from a sweep: a sweep records
     // where the capture camera stood, which is eye level.
     floorY = handles[0]?.getPosition().y ?? 0;
-    toWorld = calibrate(mpSdk, pose, allSweeps());
+    toWorld = calibrate(mpSdk, lastPose, allSweeps());
     if (!toWorld) diag.warn('Plan mapping failed.');
     return Boolean(toWorld);
   };

@@ -1,6 +1,6 @@
 import type { PresenterHandle } from './scene';
 import { allSweeps, nearestSweep } from './sweeps';
-import { areaState, distanceToArea, type Area } from './areas';
+import { areaState, distanceToArea, type Area, type AreaState } from './areas';
 import { diag } from './diagnostics';
 
 // The areas of the showroom, as a visitor experiences them.
@@ -132,4 +132,40 @@ export function bestSpotFor(
   // A circle records eye height, so the floor is that minus the capture
   // camera's height above it.
   return { x: best.x, y: best.y - floorOffset, z: best.z };
+}
+
+
+/**
+ * Travels to a zone's authored viewpoint, if it has one.
+ *
+ * Returns false when nothing is authored, so the caller can fall back to
+ * guessing. An authored view is a sweep and a heading chosen by someone who
+ * could see the room, so it is used exactly rather than being treated as a
+ * starting suggestion.
+ */
+export async function goToAuthoredView(mpSdk: any, state: AreaState): Promise<boolean> {
+  if (!state.viewSweep || !mpSdk?.Sweep?.moveTo) return false;
+
+  const transition = mpSdk?.Sweep?.Transition?.FLY ?? 'transition.fly';
+  try {
+    await mpSdk.Sweep.moveTo(state.viewSweep, { transition, transitionTime: 1400 });
+  } catch {
+    try {
+      await mpSdk.Sweep.moveTo(state.viewSweep);
+    } catch (error) {
+      diag.warn(`Could not reach the captured view: ${String(error)}`);
+      return false;
+    }
+  }
+
+  try {
+    await mpSdk?.Camera?.setRotation?.(
+      { x: state.viewPitch ?? 0, y: state.viewYaw ?? 0 },
+      { speed: 80 },
+    );
+  } catch {
+    diag.warn('Arrived, but could not turn to the captured heading.');
+  }
+
+  return true;
 }

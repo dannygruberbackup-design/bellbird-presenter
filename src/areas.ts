@@ -56,6 +56,20 @@ export type AreaState = {
   cornerB?: Point;
   /** True once a clip has been stored for this zone. */
   hasVideo?: boolean;
+
+  // The authored viewpoint: which circle to stand on and which way to look.
+  //
+  // Worth the setup time. Choosing the nearest circle and aiming at the middle
+  // of the rectangle is a decent guess and will never be better than a guess:
+  // it does not know that the display reads best from the left, or that the
+  // obvious circle puts a pillar in the way. Nineteen judgements made once beat
+  // a rule applied nineteen times.
+  viewSweep?: string;
+  viewYaw?: number;
+  viewPitch?: number;
+
+  /** Where the guide stands for this zone. */
+  guideAt?: Point;
 };
 
 type Stored = {
@@ -164,6 +178,42 @@ export function distanceToArea(point: { x: number; z: number }, state: AreaState
   return Math.hypot(dx, dz);
 }
 
+/**
+ * Extra apparent distance for a zone you have your back to.
+ *
+ * Standing in an aisle you are equally close to the displays on both sides, but
+ * you are only looking at one of them. Position alone cannot tell those apart,
+ * and the answer a visitor wants is the thing in front of them.
+ *
+ * Expressed as distance rather than a hard cone so it degrades gracefully: a
+ * display slightly off to one side is slightly less likely to be what you mean,
+ * not suddenly invisible. A zone you are practically touching still counts
+ * whichever way you face, because at half a metre you are at it regardless.
+ */
+function facingPenalty(
+  point: { x: number; z: number },
+  state: AreaState,
+  yaw?: number | null,
+): number {
+  if (yaw === undefined || yaw === null) return 0;
+  if (!isPlaced(state)) return 0;
+
+  const centre = areaCentre(state)!;
+  const dx = centre.x - point.x;
+  const dz = centre.z - point.z;
+  if (Math.hypot(dx, dz) < 0.6) return 0;
+
+  // A camera looks down its own -Z, so a yaw of t points it along
+  // (-sin t, -cos t).
+  const t = (yaw * Math.PI) / 180;
+  const facing = { x: -Math.sin(t), z: -Math.cos(t) };
+  const length = Math.hypot(dx, dz);
+  const dot = (facing.x * dx + facing.z * dz) / length;
+
+  // 0 dead ahead, rising to 2.5m directly behind.
+  return (1 - dot) * 1.25;
+}
+
 /** How far from a display still counts as being at it, in metres. */
 export function aisleReach(): number {
   return cache.aisleReach ?? 1.5;
@@ -197,9 +247,12 @@ export function setAisleReach(metres: number): void {
  * would be the app guessing which the visitor meant. Ordering by distance puts
  * the likeliest first without hiding the rest.
  */
-export function areasAt(point: { x: number; z: number }): Area[] {
+export function areasAt(point: { x: number; z: number }, yaw?: number | null): Area[] {
   const within = placedAreas()
-    .map(({ area, state }) => ({ area, distance: distanceToArea(point, state) }))
+    .map(({ area, state }) => ({
+      area,
+      distance: distanceToArea(point, state) + facingPenalty(point, state, yaw),
+    }))
     .filter((entry) => entry.distance <= aisleReach())
     .sort((a, b) => a.distance - b.distance);
 
