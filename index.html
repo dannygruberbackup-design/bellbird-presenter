@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Guided space</title>
+  </head>
+  <body>
+    <matterport-viewer></matterport-viewer>
+
+    <div id="captions" role="status" aria-live="polite" data-ui hidden></div>
+
+    <div id="controls" data-ui>
+      <button id="sound-toggle" type="button" aria-pressed="false">Sound off</button>
+      <button id="caption-toggle" type="button" aria-pressed="true">Captions on</button>
+      <button id="pause-toggle" type="button" aria-pressed="false">Pause</button>
+      <button id="hide-toggle" type="button" aria-pressed="false">Hide guide</button>
+      <button id="stations-toggle" type="button" aria-expanded="false" aria-controls="stations">
+        Stops
+      </button>
+    </div>
+
+    <nav id="stations" data-ui hidden aria-label="Places to visit">
+      <p class="group">Take me to</p>
+      <div id="station-list"></div>
+      <button id="walkthrough" type="button">Guided walkthrough</button>
+    </nav>
+
+    <div id="start-panel" data-ui hidden>
+      <button id="start" type="button">
+        <span class="tally" aria-hidden="true"></span>
+        Bring my guide here
+      </button>
+      <p class="hint">She appears in front of you and starts speaking. Captions are on.</p>
+    </div>
+
+    <aside id="dev-panel" data-ui hidden>
+      <header>
+        <span class="label">Presenter</span>
+        <button id="panel-toggle" type="button" aria-expanded="true" aria-controls="dev-body">
+          Hide
+        </button>
+      </header>
+
+      <div id="dev-body">
+        <p class="group">Presenter</p>
+        <div class="actions" id="presenter-picker"></div>
+        <label class="field" for="presenter-name">
+          <span>Name</span>
+          <input id="presenter-name" type="text" maxlength="28" placeholder="Presenter 1" />
+        </label>
+        <div class="actions">
+          <button id="toggle-visible" type="button" aria-pressed="true">Visible</button>
+        </div>
+
+        <p class="group">Placement</p>
+        <div class="actions">
+          <button id="dev-toggle" type="button" aria-pressed="false">Placement mode</button>
+          <button id="snap-toggle" type="button" aria-pressed="true">Snap: circles</button>
+        </div>
+        <div class="actions">
+          <button id="nudge-left" type="button">&larr; Left</button>
+          <button id="nudge-right" type="button">Right &rarr;</button>
+        </div>
+        <div class="actions">
+          <button id="nudge-near" type="button">Nearer</button>
+          <button id="nudge-far" type="button">Further</button>
+        </div>
+        <div class="actions">
+          <button id="nudge-up" type="button">Raise</button>
+          <button id="nudge-down" type="button">Lower</button>
+        </div>
+
+        <p class="group">Size &amp; facing</p>
+        <div class="actions">
+          <button id="facing" type="button" aria-pressed="false">Facing: upright</button>
+        </div>
+        <div class="actions">
+          <button id="mode-toggle" type="button" aria-pressed="false">Always visible</button>
+        </div>
+        <label class="slider" for="brightness">
+          <span>Brightness <output id="brightness-value">100%</output></span>
+          <input id="brightness" type="range" min="0.5" max="2" step="0.02" value="1" />
+        </label>
+        <label class="slider" for="height-slider">
+          <span>Height <output id="height-value">2.00 m</output></span>
+          <input id="height-slider" type="range" min="1.20" max="2.40" step="0.01" value="2.00" />
+        </label>
+        <label class="slider" for="summon-distance">
+          <span>Summon distance <output id="summon-distance-value">2.0 m</output></span>
+          <input id="summon-distance" type="range" min="1" max="6" step="0.1" value="2" />
+        </label>
+        <label class="slider" for="floor-offset">
+          <span>Floor offset <output id="floor-offset-value">1.50 m</output></span>
+          <input id="floor-offset" type="range" min="0.8" max="2.2" step="0.01" value="1.50" />
+        </label>
+
+        <label class="slider" for="trim-start">
+          <span>Trim start <output id="trim-start-value">0.70 s</output></span>
+          <input id="trim-start" type="range" min="0" max="3" step="0.05" value="0.70" />
+        </label>
+
+        <p class="group">Marker</p>
+        <div class="actions">
+          <button id="beacon-style" type="button">Marker: turning ring</button>
+        </div>
+        <label class="slider" for="beacon-size">
+          <span>Marker size <output id="beacon-size-value">0.34 m</output></span>
+          <input id="beacon-size" type="range" min="0.1" max="1.2" step="0.02" value="0.34" />
+        </label>
+        <label class="slider" for="beacon-height">
+          <span>Marker height <output id="beacon-height-value">1.50 m</output></span>
+          <input id="beacon-height" type="range" min="0.3" max="3" step="0.05" value="1.50" />
+        </label>
+        <label class="slider" for="beacon-speed">
+          <span>Ring speed <output id="beacon-speed-value">8 rpm</output></span>
+          <input id="beacon-speed" type="range" min="0" max="40" step="0.5" value="8" />
+        </label>
+        <label class="slider" for="beacon-turn">
+          <span>Marker turn <output id="beacon-turn-value">0&deg;</output></span>
+          <input id="beacon-turn" type="range" min="-180" max="180" step="1" value="0" />
+        </label>
+        <label class="slider" for="beacon-tilt">
+          <span>Marker tilt <output id="beacon-tilt-value">0&deg;</output></span>
+          <input id="beacon-tilt" type="range" min="-180" max="180" step="1" value="0" />
+        </label>
+        <label class="slider" for="beacon-roll">
+          <span>Marker roll <output id="beacon-roll-value">0&deg;</output></span>
+          <input id="beacon-roll" type="range" min="-180" max="180" step="1" value="0" />
+        </label>
+        <label class="slider" for="trigger-radius">
+          <span>Appears within <output id="trigger-radius-value">2.5 m</output></span>
+          <input id="trigger-radius" type="range" min="1" max="8" step="0.1" value="2.5" />
+        </label>
+
+        <p class="group">Sign</p>
+        <label class="field" for="sign-text">
+          <span>Sign text</span>
+          <input id="sign-text" type="text" maxlength="42" placeholder="What this stop is about" />
+        </label>
+        <div class="actions">
+          <button id="sign-shape" type="button">Shape: rounded</button>
+        </div>
+        <label class="slider" for="sign-size">
+          <span>Sign size <output id="sign-size-value">0.34 m</output></span>
+          <input id="sign-size" type="range" min="0.1" max="1.2" step="0.02" value="0.34" />
+        </label>
+        <label class="slider" for="sign-font">
+          <span>Text size <output id="sign-font-value">42%</output></span>
+          <input id="sign-font" type="range" min="0.16" max="0.62" step="0.01" value="0.42" />
+        </label>
+
+        <p class="group">Framing</p>
+        <label class="slider" for="frame-width">
+          <span>Frame width <output id="frame-width-value">100%</output></span>
+          <input id="frame-width" type="range" min="0.15" max="1" step="0.01" value="1" />
+        </label>
+        <label class="slider" for="crop-bottom">
+          <span>Trim bottom <output id="crop-bottom-value">0%</output></span>
+          <input id="crop-bottom" type="range" min="0" max="0.3" step="0.005" value="0" />
+        </label>
+        <label class="slider" for="crop-top">
+          <span>Trim top <output id="crop-top-value">0%</output></span>
+          <input id="crop-top" type="range" min="0" max="0.3" step="0.005" value="0" />
+        </label>
+        <label class="slider" for="ground-offset">
+          <span>Ground offset <output id="ground-offset-value">0.00 m</output></span>
+          <input id="ground-offset" type="range" min="-0.3" max="0.3" step="0.005" value="0" />
+        </label>
+
+        <p class="group">Shadow</p>
+        <label class="slider" for="shadow-size">
+          <span>Diameter <output id="shadow-size-value">0.85 m</output></span>
+          <input id="shadow-size" type="range" min="0" max="2.5" step="0.05" value="0.85" />
+        </label>
+        <label class="slider" for="shadow-depth">
+          <span>Depth <output id="shadow-depth-value">45%</output></span>
+          <input id="shadow-depth" type="range" min="0" max="1" step="0.05" value="0.45" />
+        </label>
+
+        <p class="group">Video</p>
+        <div class="actions">
+          <button id="load-video" type="button">Load from device</button>
+        </div>
+        <div class="actions">
+          <button id="summon" type="button">Bring here &amp; play</button>
+        </div>
+        <div class="actions">
+          <button id="replay" type="button">Replay</button>
+          <button id="clear-video" type="button">Clear saved</button>
+        </div>
+        <div class="actions">
+          <button id="dev-copy" type="button">Copy placement JSON</button>
+        </div>
+        <div class="actions">
+          <button id="reset-settings" type="button">Reset to defaults</button>
+        </div>
+
+        <input id="video-file" type="file" accept="video/*" hidden />
+        <pre id="dev-readout"></pre>
+      </div>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
