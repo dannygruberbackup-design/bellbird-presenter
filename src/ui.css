@@ -44,7 +44,17 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
 #controls button[aria-pressed='true'] { border-color:rgba(232,230,225,0.5); }
 #stations { position:fixed; right:1rem; top:4.5rem; width:min(15rem,calc(100vw - 2rem)); max-height:60dvh; overflow:auto; padding:0.8rem; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:var(--scrim); backdrop-filter:blur(14px); z-index:26; }
 #stations .group { margin:0 0 0.5rem; font-size:0.66rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:rgba(232,230,225,0.5); }
-#stations button { display:block; width:100%; min-height:42px; margin-bottom:0.35rem; padding:0.45rem 0.7rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:transparent; color:var(--mist); font:500 0.82rem var(--ui-sans); text-align:left; cursor:pointer; }
+#station-list { margin:0; padding:0; list-style:none; }
+/* Name and guide button share a row: the name is the place, the button is the
+   person. Splitting them into two lists would double the height for no gain. */
+#station-list li { display:flex; gap:0.35rem; margin-bottom:0.35rem; }
+#stations button { min-height:42px; padding:0.45rem 0.7rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:transparent; color:var(--mist); font:500 0.82rem var(--ui-sans); text-align:left; cursor:pointer; }
+#station-list .go { flex:1; }
+#station-list .call { flex:0 0 auto; width:44px; text-align:center; font-size:1rem; line-height:1; }
+/* Lit while you are standing in that area. The tally red is already the
+   project's "on air" colour, so it needs no explaining. */
+#station-list li.here .go { border-color:var(--tally); color:#fff; background:rgba(224,54,44,0.16); }
+#station-list li.here .call { border-color:var(--tally); }
 #walkthrough { border-color:var(--tally) !important; text-align:center !important; margin-top:0.4rem; }
 #station-list:empty::after { content:"No stops placed yet."; display:block; font-size:0.78rem; color:rgba(232,230,225,0.55); }
 #diag-panel { position:fixed; left:0.75rem; right:0.75rem; bottom:0.75rem; max-height:34vh; display:flex; flex-direction:column; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:rgba(11,15,20,0.94); backdrop-filter:blur(14px); z-index:60; }

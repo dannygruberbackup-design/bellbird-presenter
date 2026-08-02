@@ -71,19 +71,6 @@ export type PresenterInputs = ChromaKeyOptions & {
   /** How close a visitor must be before she appears, in metres. */
   triggerRadius: number;
 
-  // The sign above the ring: what this stop is about.
-  //
-  // Deliberately separate from the ring rather than part of it. The ring turns,
-  // and text that turns with it is unreadable for most of every revolution. The
-  // sign hangs off the presenter's root instead, which already faces the
-  // viewer, so it is always square-on while the blocks spin beneath it.
-  signText: string;
-  /** Cap height in metres — the actual size of the letters in the room. */
-  signSize: number;
-  /** Text colour as hex. */
-  signColour: string;
-  /** Gap between the top of the ring and the baseline of the text, in metres. */
-  signGap: number;
   /** Show a floating marker when she is not speaking. */
   beacon: boolean;
   shadowDiameter: number;
@@ -110,10 +97,6 @@ export const DEFAULT_PRESENTER: PresenterInputs = {
   mode: 'always',
   beacon: true,
   beaconStyle: 'spin',
-  signText: '',
-  signSize: 0.2,
-  signColour: '#ffffff',
-  signGap: 0.18,
   beaconSpeed: 8,
   beaconTurn: 0,
   beaconTilt: 0,
@@ -222,67 +205,6 @@ function blockFace(THREE: any, colour: string, letter?: string): any {
   return texture;
 }
 
-// Floating text, no plate.
-//
-// A rounded panel with a keyline is interface language: it reads as a chip
-// pasted onto the glass rather than something in the room, and next to eight
-// ceramic blocks that mismatch is glaring. Letters alone sit in the space.
-//
-// The cost of dropping the plate is legibility — white text over a bright
-// window disappears. So the glyphs carry a soft dark shadow: not a shape, just
-// enough separation to hold an edge against anything behind them. It is drawn
-// twice because one pass is too faint to survive a sunlit wall.
-function makeSign(THREE: any, inputs: any): any {
-  const text = String(inputs.signText ?? '').trim();
-  if (!text) return null;
-
-  // Working resolution. The plane is then scaled so a cap ends up exactly
-  // signSize metres tall, which is why this number never has to be tuned.
-  const cap = 160;
-  const pad = cap * 0.55;
-  const font = `700 ${cap}px ui-sans-serif, system-ui, "Segoe UI", sans-serif`;
-
-  const gauge = document.createElement('canvas').getContext('2d')!;
-  gauge.font = font;
-
-  const W = Math.ceil(Math.min(3072, gauge.measureText(text).width + pad * 2));
-  const H = Math.ceil(cap + pad * 2);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
-
-  ctx.font = font;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = cap * 0.22;
-  ctx.shadowOffsetY = cap * 0.05;
-
-  ctx.fillStyle = inputs.signColour || '#ffffff';
-  ctx.fillText(text, W / 2, H / 2);
-  ctx.fillText(text, W / 2, H / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.anisotropy = 4;
-
-  // Scale from the working resolution to metres via the cap height.
-  const metresPerPixel = inputs.signSize / cap;
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(W * metresPerPixel, H * metresPerPixel),
-    new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      depthWrite: false,
-      toneMapped: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  mesh.renderOrder = 12;
-  return mesh;
-}
 
 
 function makeBeacon(THREE: any): any {
@@ -391,7 +313,6 @@ export class ChromaPresenterComponent {
   private root: any;
   private plane: any;
   private beacon: any;
-  private sign: any;
   private hit: any;
   private spin = 0;
   private shadow: any;
@@ -496,7 +417,6 @@ export class ChromaPresenterComponent {
 
     this.beacon = makeBeacon(THREE);
     this.root.add(this.beacon);
-    this.rebuildSign();
     this.applyBeacon();
 
     // A dedicated hit target, resized to whatever is currently on show. The
@@ -588,7 +508,6 @@ export class ChromaPresenterComponent {
     if (!this.plane || !this.beacon || !this.hit) return;
 
     const idle = this.inputs.mode === 'onApproach' && !this.playing;
-    if (this.sign) this.sign.visible = idle && this.inputs.beaconStyle !== 'off';
 
     this.plane.visible = !idle;
     this.beacon.visible = this.inputs.beaconStyle !== 'off' && this.inputs.beacon && idle;
@@ -632,32 +551,6 @@ export class ChromaPresenterComponent {
     this.applyBeacon();
   }
 
-  /** Rebuilds the sign from the current text, shape and font settings. */
-  private rebuildSign(): void {
-    if (this.sign) {
-      this.root.remove(this.sign);
-      this.sign.geometry?.dispose?.();
-      this.sign.material?.map?.dispose?.();
-      this.sign.material?.dispose?.();
-      this.sign = null;
-    }
-    const built = makeSign(this.context.three, this.inputs);
-    if (built) {
-      this.sign = built;
-      this.root.add(this.sign);
-    }
-    this.applyBeacon();
-  }
-
-  /** Text, cap height in metres, colour, and gap above the ring in metres. */
-  setSign(text: string, size: number, colour: string, gap: number): void {
-    this.inputs.signText = text;
-    this.inputs.signSize = Math.max(0.02, size);
-    this.inputs.signColour = colour;
-    this.inputs.signGap = gap;
-    this.rebuildSign();
-  }
-
   setBeaconStyle(style: 'spin' | 'static' | 'off'): void {
     this.inputs.beaconStyle = style;
     this.applyBeacon();
@@ -688,12 +581,6 @@ export class ChromaPresenterComponent {
       this.inputs.beaconRoll * rad,
     );
 
-    if (this.sign) {
-      // Above the ring's own extent, then the gap you asked for. Measured from
-      // the ring rather than a constant, so resizing it never has them collide.
-      this.sign.position.y =
-        beaconHeight + beaconSize * 0.8 + this.inputs.signSize * 0.5 + this.inputs.signGap;
-    }
   }
 
   setBrightness(value: number): void {
@@ -839,6 +726,12 @@ export class ChromaPresenterComponent {
       y: this.tmpWorldPos.y,
       z: this.tmpCamPos.z - Math.cos(yaw) * distance,
     };
+  }
+
+  /** Where the viewer is standing, or null if that is not yet known. */
+  viewerPosition(): { x: number; y: number; z: number } | null {
+    if (!this.camera?.copyPositionInto(this.tmpCamPos)) return null;
+    return { x: this.tmpCamPos.x, y: this.tmpCamPos.y, z: this.tmpCamPos.z };
   }
 
   facingReport(): string {

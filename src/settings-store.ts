@@ -41,10 +41,6 @@ export type PresenterSettings = {
   beaconSize?: number;
   beaconHeight?: number;
   beaconSpeed?: number;
-  signText?: string;
-  signSize?: number;
-  signColour?: string;
-  signGap?: number;
   beaconTurn?: number;
   beaconTilt?: number;
   beaconRoll?: number;

@@ -14,7 +14,7 @@ import { initDiagnostics, diag, describeError } from './diagnostics';
 import { connectSdk } from './connect';
 import { saveVideo, loadVideo, clearVideo } from './video-store';
 import { subscribeSweeps, nearestSweep } from './sweeps';
-import { stationsFrom, goToStation, type Station } from './stations';
+import { stationsFrom, goToStation, isInside, lookAt, type Station } from './stations';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
 
 const viewer = document.querySelector('matterport-viewer') as any;
@@ -88,7 +88,7 @@ async function main() {
   applySavedSettings();
 
   director.start();
-  wireControls(director, captions);
+  wireControls(mpSdk, director, captions);
   wireStations(mpSdk, director);
   await restoreSavedVideos();
   diag.info('Ready.');
@@ -108,7 +108,7 @@ async function main() {
  * capture camera's eye height. That is what keeps her feet on the floor on any
  * storey rather than at whatever height she happened to be before.
  */
-function summon(director: ReturnType<typeof createDirector>) {
+function summon(director: ReturnType<typeof createDirector>, mpSdk?: any) {
   const handle = current();
   if (!handle) return;
 
@@ -146,6 +146,11 @@ function summon(director: ReturnType<typeof createDirector>) {
 
   director.unmute();
   director.replay(handle.id);
+
+  // Turn to face her. Asking for the guide while looking at a wall otherwise
+  // leaves her politely behind your shoulder, which reads as nothing happening.
+  const from = handle.component.viewerPosition();
+  if (mpSdk && from) void lookAt(mpSdk, target, from);
 }
 
 // ---------------------------------------------------------------- restoring
@@ -177,14 +182,6 @@ function applySavedSettings() {
         saved.beaconTurn ?? 0,
         saved.beaconTilt ?? 0,
         saved.beaconRoll ?? 0,
-      );
-    }
-    if (saved.signText !== undefined || saved.signSize !== undefined) {
-      handle.component.setSign(
-        saved.signText ?? '',
-        saved.signSize ?? 0.2,
-        saved.signColour ?? '#ffffff',
-        saved.signGap ?? 0.18,
       );
     }
     if (saved.triggerRadius !== undefined) {
@@ -224,6 +221,7 @@ async function restoreSavedVideos() {
 // ---------------------------------------------------------------- visitor UI
 
 function wireControls(
+  mpSdk: any,
   director: ReturnType<typeof createDirector>,
   captions: ReturnType<typeof createCaptionController>,
 ) {
@@ -248,7 +246,7 @@ function wireControls(
   // to be spoken to.
   startButton.addEventListener('click', () => {
     setSound(true);
-    summon(director);
+    summon(director, mpSdk);
     startPanel.hidden = true;
   });
 
@@ -305,52 +303,93 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   if (!panel || !toggle || !list) return;
 
   let walking = false;
+  let rows: { station: Station; li: HTMLElement }[] = [];
 
-  const visit = async (station: Station) => {
+  const close = () => {
     panel.hidden = true;
     toggle.setAttribute('aria-expanded', 'false');
+  };
+
+  // Travel, then speak. Two separate acts on the menu because they are two
+  // separate wants: "show me that area" and "tell me about it" are not the same
+  // request, and forcing them together means you cannot look around in peace.
+  const travel = async (station: Station) => {
+    close();
+    await goToStation(mpSdk, station, () => {});
+  };
+
+  const call = async (station: Station) => {
+    close();
     await goToStation(mpSdk, station, () => {
-      director.unmute();
-      director.replay(station.handle.id);
+      selected = handles.findIndex((h) => h.id === station.handle.id);
+      summon(director, mpSdk);
     });
   };
 
   const rebuild = () => {
     list.textContent = '';
-    for (const station of stationsFrom(handles, displayName)) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = station.label;
-      button.addEventListener('click', () => {
+    rows = stationsFrom(handles, displayName).map((station) => {
+      const li = document.createElement('li');
+
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'go';
+      go.textContent = station.label;
+      go.addEventListener('click', () => {
         walking = false;
-        void visit(station);
+        void travel(station);
       });
-      list.appendChild(button);
-    }
+
+      const guide = document.createElement('button');
+      guide.type = 'button';
+      guide.className = 'call';
+      guide.textContent = '\u25b6';
+      guide.title = `Bring the guide to ${station.label}`;
+      guide.setAttribute('aria-label', guide.title);
+      guide.addEventListener('click', () => {
+        walking = false;
+        void call(station);
+      });
+
+      li.append(go, guide);
+      list.appendChild(li);
+      return { station, li };
+    });
+    paint();
   };
 
+  /** Lights the area the visitor is currently standing in. */
+  const paint = () => {
+    for (const row of rows) row.li.classList.toggle('here', isInside(row.station));
+  };
+
+  // Painted on a timer rather than on every frame: the menu only has to keep up
+  // with walking, and a quarter of a second is imperceptible for that.
+  window.setInterval(() => {
+    if (!panel.hidden) paint();
+  }, 250);
+
   toggle.addEventListener('click', () => {
-    const open = panel.hidden;
-    if (open) rebuild();
-    panel.hidden = !open;
-    toggle.setAttribute('aria-expanded', String(open));
+    const opening = panel.hidden;
+    if (opening) rebuild();
+    panel.hidden = !opening;
+    toggle.setAttribute('aria-expanded', String(opening));
   });
 
-  // The walkthrough is the menu played in order: travel, speak, wait for the
-  // clip to end, move on. Waiting on 'ended' rather than a timer means a longer
-  // clip is never cut off and a shorter one never leaves a silent gap.
+  // The walkthrough is the same list played in order: travel, speak, wait for
+  // the clip to end, move on. Waiting on 'ended' rather than a timer means a
+  // long clip is never cut off and a short one never leaves a silent gap.
   walkButton?.addEventListener('click', async () => {
     const stations = stationsFrom(handles, displayName);
     if (stations.length === 0) return;
 
     walking = true;
-    panel.hidden = true;
-    toggle.setAttribute('aria-expanded', 'false');
+    close();
     diag.info(`Walkthrough: ${stations.length} stops.`);
 
     for (const station of stations) {
       if (!walking) break;
-      await visit(station);
+      await call(station);
       await waitForClip(station.handle);
     }
 
@@ -370,8 +409,7 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
       resolve();
     };
     video.addEventListener('ended', done);
-    // A clip that never fires 'ended' — a stand-in, a decode failure — must not
-    // strand the walkthrough forever.
+    // A clip that never fires 'ended' must not strand the walkthrough forever.
     setTimeout(done, 60_000);
   });
 }
@@ -411,7 +449,6 @@ function enableDevTools(mpSdk: any, director: ReturnType<typeof createDirector>)
   wirePlacementButtons(placement, onMoved);
   wirePresenterControls(refresh);
   wireMarkerControls(refresh);
-  wireSignControls();
   wireFramingControls();
   wireShadowControls();
   wireSpaceControls();
@@ -553,12 +590,6 @@ function syncControlsToSelection() {
     (v) => `${v.toFixed(1)} m`,
   );
 
-  const signField = document.querySelector('#sign-text') as HTMLInputElement;
-  signField.value = saved.signText ?? '';
-  (document.querySelector('#sign-colour') as HTMLInputElement).value =
-    saved.signColour ?? '#ffffff';
-  setSlider('#sign-size', '#sign-size-value', saved.signSize ?? 0.2, (v) => `${v.toFixed(2)} m`);
-  setSlider('#sign-gap', '#sign-gap-value', saved.signGap ?? 0.18, (v) => `${v.toFixed(2)} m`);
 
   const beaconButton = document.querySelector('#beacon-style') as HTMLButtonElement;
   const style = saved.beaconStyle ?? 'spin';
@@ -795,26 +826,6 @@ function wireMarkerControls(refresh: () => void) {
   });
 }
 
-function wireSignControls() {
-  const apply = () => {
-    const handle = current();
-    if (!handle) return;
-    const text = (document.querySelector('#sign-text') as HTMLInputElement).value;
-    const colour = (document.querySelector('#sign-colour') as HTMLInputElement).value;
-    const size = Number((document.querySelector('#sign-size') as HTMLInputElement).value);
-    const gap = Number((document.querySelector('#sign-gap') as HTMLInputElement).value);
-    handle.component.setSign(text, size, colour, gap);
-    saveFor(handle.id, { signText: text, signSize: size, signColour: colour, signGap: gap });
-  };
-
-  // Redrawn on every keystroke and every drag: cheap at this size, and it means
-  // the text is judged in the room rather than in the field.
-  document.querySelector('#sign-text')!.addEventListener('input', apply);
-  document.querySelector('#sign-colour')!.addEventListener('input', apply);
-  onSlider('#sign-size', '#sign-size-value', (v) => `${v.toFixed(2)} m`, apply);
-  onSlider('#sign-gap', '#sign-gap-value', (v) => `${v.toFixed(2)} m`, apply);
-}
-
 function wireFramingControls() {
   const apply = () => {
     const handle = current();
@@ -915,7 +926,7 @@ function wireVideoPicker(director: ReturnType<typeof createDirector>, onMoved: (
   });
 
   document.querySelector('#summon')!.addEventListener('click', () => {
-    summon(director);
+    summon(director, (window as any).mp?.mpSdk);
     onMoved();
   });
 

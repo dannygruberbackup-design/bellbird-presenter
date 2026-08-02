@@ -2,12 +2,12 @@ import type { PresenterHandle } from './scene';
 import { nearestSweep } from './sweeps';
 import { diag } from './diagnostics';
 
-// Turns the placed presenters into a list a visitor can travel between.
+// The areas of the showroom, as a visitor experiences them.
 //
-// Each placed guide is a station: somewhere worth standing, with something to
-// say. The menu, the walkthrough and the beacons are three ways into the same
-// list rather than three features — which is why they share this module instead
-// of each growing their own idea of what a station is.
+// Each placed guide is an area: somewhere worth standing, with something to say
+// about it. The menu, the walkthrough and the proximity trigger are three ways
+// into the same list rather than three features, which is why they all read
+// from here.
 
 export type Station = {
   handle: PresenterHandle;
@@ -24,12 +24,19 @@ export function stationsFrom(
     .map((handle) => ({ handle, label: labelOf(handle) }));
 }
 
+/** True when the visitor is inside this area. */
+export function isInside(station: Station): boolean {
+  const distance = station.handle.component.distanceToViewer();
+  if (!Number.isFinite(distance)) return false;
+  return distance <= station.handle.component.inputs.triggerRadius;
+}
+
 /**
- * Moves the viewer to a station, then starts her talking.
+ * Travels to an area, then runs `onArrived`.
  *
- * Travel first, speak second. Starting the clip before the camera arrives means
- * a visitor hears the opening line while still looking at the last room, which
- * reads as a glitch rather than a greeting.
+ * Travel first, speak second. Starting a clip before the camera lands means
+ * hearing the opening line while still looking at the last room, which reads as
+ * a glitch rather than a greeting.
  */
 export async function goToStation(
   mpSdk: any,
@@ -42,14 +49,35 @@ export async function goToStation(
   if (circle?.sid && mpSdk?.Sweep?.moveTo) {
     try {
       await mpSdk.Sweep.moveTo(circle.sid, { transition: 'fly', transitionTime: 1400 });
-    } catch (error) {
-      // A failed move is not a reason to stay silent; she can still speak from
-      // wherever the visitor happens to be.
-      diag.warn(`Could not travel to ${station.label}: ${String(error)}`);
+    } catch {
+      diag.warn(`No travel to ${station.label}.`);
     }
   } else {
-    diag.warn(`No reachable circle near ${station.label}; playing from here.`);
+    diag.warn(`No circle near ${station.label}.`);
   }
 
   onArrived();
+}
+
+/**
+ * Turns the camera to look at a point.
+ *
+ * Without this, asking for the guide while facing a wall puts her politely
+ * behind your shoulder. A camera looks down its own -Z, so a yaw of t points it
+ * along (-sin t, -cos t); solving that for the direction to her gives the yaw
+ * below. Pitch is left at zero deliberately: she stands on the floor, and
+ * tipping the view down to find her feet is not what anyone wants.
+ */
+export async function lookAt(
+  mpSdk: any,
+  target: { x: number; y: number; z: number },
+  from: { x: number; y: number; z: number },
+): Promise<void> {
+  const yaw = (Math.atan2(-(target.x - from.x), -(target.z - from.z)) * 180) / Math.PI;
+  try {
+    await mpSdk?.Camera?.setRotation?.({ x: 0, y: yaw }, { speed: 60 });
+  } catch {
+    // Older bundles expose rotate() instead; not worth failing the summon over.
+    diag.warn('Could not turn the camera.');
+  }
 }
