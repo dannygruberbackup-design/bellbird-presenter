@@ -5,6 +5,7 @@ import '@matterport/webcomponent';
 import './ui.css';
 
 import { spawnPresenters, spawnZoneOverlay, type PresenterHandle } from './scene';
+import { MODEL_PROBE_COMPONENT, modelProbeFactory } from './model-probe';
 import { createDirector } from './presenter-director';
 import { createCaptionController } from './captions';
 import { createPlacementMode } from './placement';
@@ -794,21 +795,55 @@ function wireAreaAuthoring(mpSdk: any): void {
       const [object] = await mpSdk.Scene.createObjects(1);
       const node = object.addNode();
 
-      // The cube's origin is the centre of its base, so it stands on the floor
-      // rather than sinking halfway into it.
+      // The probe first, so something is visible even if the loader does
+      // nothing at all. If the wireframe appears and the model does not, the
+      // node is in the right place and the loader is the fault.
+      try {
+        if (typeof mpSdk.Scene.registerComponents === 'function') {
+          await mpSdk.Scene.registerComponents([
+            { name: MODEL_PROBE_COMPONENT, factory: modelProbeFactory },
+          ]);
+        }
+        node.addComponent(MODEL_PROBE_COMPONENT, { size: 1 });
+      } catch {
+        // Already registered by an earlier placement; harmless.
+      }
+
+      // Position through the component's own input rather than by reaching into
+      // obj3D. The loader builds its subtree when it finishes loading, well
+      // after the node was positioned, and it positions that subtree from
+      // localPosition - so anything set directly on the node is overwritten by
+      // the default of {0,0,0} the moment the model arrives. That alone puts
+      // the model at the world origin, which in this space is off in a corner.
       const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
-      (node.obj3D ?? node).position.set(from.x, from.y - floorOffset, from.z);
+      const loader = node.addComponent('mp.gltfLoader', {
+        url: modelUrl,
+        localPosition: { x: from.x, y: from.y - floorOffset, z: from.z },
+        localScale: { x: 1, y: 1, z: 1 },
+        visible: true,
+      });
 
-      node.addComponent('mp.gltfLoader', { url: modelUrl });
-
-      // Their loaders shade with the scene, and the scene has no lights of its
-      // own. Without this a correctly loaded model is a black silhouette, which
-      // looks exactly like a broken one.
       node.addComponent('mp.lights');
-
       object.start();
       modelObject = object;
-      modelStatus.textContent = 'Placed. Walk round it to check scale and facing.';
+
+      // loadingState is the component's own verdict: Idle, Loading, Loaded or
+      // Error. Loading fails asynchronously, long after addComponent has
+      // returned happily, so this is the only place the truth shows up.
+      let ticks = 0;
+      const watch = window.setInterval(() => {
+        const state = loader?.outputs?.loadingState ?? 'unknown';
+        ticks += 1;
+        if (state === 'Loaded' || state === 'Error' || ticks > 20) {
+          window.clearInterval(watch);
+          diag.info(`Model ${state} after ${(ticks * 0.5).toFixed(1)}s.`);
+          modelStatus.textContent =
+            state === 'Loaded'
+              ? 'Loaded. Walk round it to check scale and facing.'
+              : `Loader says: ${state}. The red wireframe marks where it should be.`;
+        }
+      }, 500);
+
     } catch (error) {
       diag.error(`Could not place the model: ${describeError(error)}`);
     }
