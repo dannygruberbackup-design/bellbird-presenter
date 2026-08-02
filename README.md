@@ -49,3 +49,7 @@ assumed green would have keyed nothing. Details are in the comments there and in
 
 Wordmark colours for the marker were sampled from the logo bitmap on
 bellbird.com.au, letter block by letter block.
+
+## Deploying
+
+Vercel builds from `main` on every push. There is no manual deploy step.
