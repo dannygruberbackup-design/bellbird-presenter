@@ -125,6 +125,21 @@ export function areaState(id: AreaId): AreaState {
   return { ...(PUBLISHED.byArea[id] ?? {}), ...(cache.byArea[id] ?? {}) };
 }
 
+/**
+ * Where a zone's clip is served from, by convention.
+ *
+ * A file committed at public/clips/<id>.mp4 is served at /clips/<id>.mp4, so
+ * naming it after the zone is the whole configuration. An explicit videoUrl
+ * still wins, for a clip that lives somewhere else or is shared between zones.
+ *
+ * The convention matters more than it looks: the alternative is nineteen URLs
+ * typed into a panel, which is nineteen chances to typo a path that then fails
+ * silently for visitors and nobody else.
+ */
+export function clipUrlFor(id: AreaId): string {
+  return areaState(id).videoUrl ?? `/clips/${id}.mp4`;
+}
+
 export function saveArea(id: AreaId, patch: AreaState): void {
   cache.byArea[id] = { ...(cache.byArea[id] ?? {}), ...patch };
   persist();

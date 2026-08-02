@@ -23,3 +23,12 @@ export type PublishedMap = {
 export const PUBLISHED: PublishedMap = {
   byArea: {},
 };
+
+/**
+ * Zone ids with a clip committed under public/clips.
+ *
+ * Listed rather than discovered: the browser cannot read a folder on the
+ * server, and probing nineteen URLs to find out would mean nineteen failed
+ * requests on every load for files that mostly are not there yet.
+ */
+export const PUBLISHED_CLIP_IDS: string[] = [];

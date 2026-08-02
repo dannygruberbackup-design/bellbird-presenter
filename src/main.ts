@@ -5,6 +5,7 @@ import '@matterport/webcomponent';
 import './ui.css';
 
 import { spawnPresenters, spawnZoneOverlay, type PresenterHandle } from './scene';
+import { PUBLISHED_CLIP_IDS } from './areas.published';
 import { createDirector } from './presenter-director';
 import { createCaptionController } from './captions';
 import { createPlacementMode } from './placement';
@@ -31,6 +32,7 @@ import {
   aisleReach,
   setAisleReach,
   importMap,
+  clipUrlFor,
   type Area,
 } from './areas';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
@@ -560,21 +562,21 @@ async function useAreaClip(area: Area): Promise<void> {
   // A clip uploaded here wins, because that is what you are previewing. Failing
   // that, the hosted one, which is the only version a visitor can ever play.
   const saved = await loadVideo(`area:${area.id}`);
-  const source = saved ? URL.createObjectURL(saved.blob) : areaState(area.id).videoUrl;
-
-  if (!source) {
-    diag.warn(`No clip for ${area.name} yet.`);
-    return;
-  }
-
+  const source = saved ? URL.createObjectURL(saved.blob) : clipUrlFor(area.id);
   handle.component.useVideo(source, area.name);
   lastClip = area.id;
 }
 
+/** Zone ids with a clip committed under public/clips. */
+const PUBLISHED_CLIPS = new Set<string>(PUBLISHED_CLIP_IDS);
+
 /** Whether a zone has a guide at all, from either source. */
 function hasAnyClip(id: string): boolean {
   const state = areaState(id);
-  return state.hasVideo === true || Boolean(state.videoUrl);
+  // publishedClips is the list of zone ids that have a file committed. Checking
+  // a list rather than probing the network keeps the menu honest offline and
+  // avoids nineteen requests for files that mostly are not there yet.
+  return state.hasVideo === true || Boolean(state.videoUrl) || PUBLISHED_CLIPS.has(id);
 }
 
 /** Which zone's clip is currently loaded, so it is not reloaded needlessly. */
