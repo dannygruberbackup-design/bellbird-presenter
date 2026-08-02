@@ -17,6 +17,11 @@ export type Sweep = { x: number; y: number; z: number; sid: string };
 
 const sweeps: Sweep[] = [];
 
+/** Every known circle, for anything that needs a spread of known points. */
+export function allSweeps(): Sweep[] {
+  return sweeps;
+}
+
 export function sweepCount(): number {
   return sweeps.length;
 }

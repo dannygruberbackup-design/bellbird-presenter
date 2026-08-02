@@ -13,7 +13,8 @@ import { SDK_KEY, MODEL_SID, IS_DEV, SHOW_DIAG, WANT_LIGHTS } from './config';
 import { initDiagnostics, diag, describeError } from './diagnostics';
 import { connectSdk } from './connect';
 import { saveVideo, loadVideo, clearVideo } from './video-store';
-import { subscribeSweeps, nearestSweep } from './sweeps';
+import { subscribeSweeps, nearestSweep, allSweeps } from './sweeps';
+import { calibrate, type ScreenToWorld } from './plan-mapping';
 import { goToStation, lookAt } from './stations';
 import type { ZoneOverlayComponent } from './zone-overlay';
 import {
@@ -553,91 +554,110 @@ function wireAreaAuthoring(mpSdk: any): void {
   // real world position. Corners here are deliberately NOT snapped to floor
   // circles: a zone edge usually runs along a wall, where nobody ever stood.
   const draw = document.querySelector('#area-draw') as HTMLButtonElement;
-  let drawing = false;
-  let dragging = false;
-  let start: { x: number; y: number; z: number } | null = null;
-  let hit: { position: { x: number; y: number; z: number } } | null = null;
-  let lastPreview = 0;
+  const layer = document.querySelector('#draw-layer') as HTMLElement;
+  const rect = document.querySelector('#draw-rect') as HTMLElement;
 
-  mpSdk?.Pointer?.intersection?.subscribe?.((intersection: any) => {
-    hit = intersection;
+  let drawing = false;
+  let toWorld: ScreenToWorld | null = null;
+  let from: { x: number; y: number } | null = null;
+  let floorY = 0;
+  let pose: any = null;
+
+  mpSdk?.Camera?.pose?.subscribe?.((next: any) => {
+    pose = next;
   });
 
   const setDrawing = async (on: boolean) => {
     drawing = on;
-    dragging = false;
-    start = null;
+    from = null;
+    rect.hidden = true;
+    layer.hidden = !on;
     draw.setAttribute('aria-pressed', String(on));
     draw.textContent = on ? 'Done drawing' : 'Draw on floor plan';
-    document.body.classList.toggle('placement-active', on);
 
     try {
       const mode = on ? mpSdk?.Mode?.Mode?.FLOORPLAN : mpSdk?.Mode?.Mode?.INSIDE;
       if (mode) await mpSdk.Mode.moveTo(mode);
     } catch {
-      diag.warn('Could not switch view; draw from wherever you are.');
+      diag.warn('Could not switch to the floor plan.');
     }
 
-    status.textContent = on ? `Drag across ${chosen().name}.` : '';
-    if (!on) show();
-    refreshZoneOverlay();
-  };
-
-  draw.addEventListener('click', () => void setDrawing(!drawing));
-
-  const floorPoint = () =>
-    hit ? { x: hit.position.x, y: hit.position.y, z: hit.position.z } : null;
-
-  // Press, drag, release. Two taps made you do the computer's work: holding a
-  // rectangle out and watching it follow your finger is how everyone expects to
-  // draw a box, and it shows the result before you commit rather than after.
-  window.addEventListener('pointerdown', (event) => {
-    if (!drawing) return;
-    if ((event.target as HTMLElement)?.closest('[data-ui]')) return;
-    const point = floorPoint();
-    if (!point) return;
-    dragging = true;
-    start = point;
-    saveArea(chosen().id, { cornerA: point, cornerB: point });
-    refreshZoneOverlay();
-  });
-
-  window.addEventListener('pointermove', () => {
-    if (!drawing || !dragging || !start) return;
-    const point = floorPoint();
-    if (!point) return;
-    // Throttled: the overlay rebuilds every slab, and sixty times a second is
-    // far more than a hand moving across a plan needs.
-    const now = performance.now();
-    if (now - lastPreview < 60) return;
-    lastPreview = now;
-    saveArea(chosen().id, { cornerB: point });
-    refreshZoneOverlay();
-  });
-
-  window.addEventListener('pointerup', () => {
-    if (!drawing || !dragging || !start) return;
-    dragging = false;
-
-    const point = floorPoint() ?? start;
-    const span = Math.hypot(point.x - start.x, point.z - start.z);
-
-    // A stray tap would otherwise leave a zone the size of a coin, which then
-    // reports nobody as ever being inside it.
-    if (span < 0.4) {
-      saveArea(chosen().id, { cornerA: undefined, cornerB: undefined });
-      status.textContent = `Too small \u2014 drag right across ${chosen().name}.`;
+    if (!on) {
+      show();
       refreshZoneOverlay();
       return;
     }
 
-    saveArea(chosen().id, { cornerA: start, cornerB: point });
+    // Calibrate after the view has settled: the plan slides and scales into
+    // place, and a mapping solved mid-animation describes a view that no longer
+    // exists by the time anyone drags on it.
+    window.setTimeout(() => {
+      const circles = allSweeps();
+      floorY = circles.length ? circles[0].y : 0;
+      toWorld = calibrate(mpSdk, pose, circles);
+      status.textContent = toWorld
+        ? `Drag across ${chosen().name}.`
+        : 'Could not map the plan. Tell me and I will use another route.';
+      if (!toWorld) diag.warn('Plan mapping failed.');
+    }, 900);
+  };
+
+  draw.addEventListener('click', () => void setDrawing(!drawing));
+
+  const paintRect = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    rect.hidden = false;
+    rect.style.left = `${Math.min(a.x, b.x)}px`;
+    rect.style.top = `${Math.min(a.y, b.y)}px`;
+    rect.style.width = `${Math.abs(a.x - b.x)}px`;
+    rect.style.height = `${Math.abs(a.y - b.y)}px`;
+  };
+
+  layer.addEventListener('pointerdown', (event) => {
+    if (!drawing) return;
+    layer.setPointerCapture(event.pointerId);
+    from = { x: event.clientX, y: event.clientY };
+    paintRect(from, from);
+  });
+
+  // Drawn in screen space and converted once on release. Rebuilding every slab
+  // on every move to preview a rectangle is a lot of work for a box the browser
+  // can draw itself, and this way the outline keeps up with a finger exactly.
+  layer.addEventListener('pointermove', (event) => {
+    if (!drawing || !from) return;
+    paintRect(from, { x: event.clientX, y: event.clientY });
+  });
+
+  layer.addEventListener('pointerup', (event) => {
+    if (!drawing || !from) return;
+    const to = { x: event.clientX, y: event.clientY };
+    const started = from;
+    from = null;
+    rect.hidden = true;
+
+    if (!toWorld) {
+      status.textContent = 'The plan is not mapped yet \u2014 try again in a moment.';
+      return;
+    }
+
+    const a = toWorld(started);
+    const b = toWorld(to);
+    const span = Math.hypot(a.x - b.x, a.z - b.z);
+
+    // A stray tap would otherwise leave a zone the size of a coin, which then
+    // reports nobody as ever having been inside it.
+    if (span < 0.4) {
+      status.textContent = `Too small \u2014 drag right across ${chosen().name}.`;
+      return;
+    }
+
+    saveArea(chosen().id, {
+      cornerA: { x: a.x, y: floorY, z: a.z },
+      cornerB: { x: b.x, y: floorY, z: b.z },
+    });
     diag.info(`${chosen().name}: ${span.toFixed(1)}m across.`);
     refreshZoneOverlay();
 
-    // Step to the next unplaced zone: nineteen is a lot of dropdown, and the
-    // order on the plan is the order you would walk.
-    const remaining = AREAS.find((a) => !isPlaced(areaState(a.id)));
+    const remaining = AREAS.find((area) => !isPlaced(areaState(area.id)));
     if (remaining) picker.value = remaining.id;
     markPlaced();
     status.textContent = remaining
