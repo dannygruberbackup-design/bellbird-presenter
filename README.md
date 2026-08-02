@@ -53,3 +53,42 @@ bellbird.com.au, letter block by letter block.
 ## Deploying
 
 Vercel builds from `main` on every push. There is no manual deploy step.
+
+## Publishing from the author panel
+
+Everything authored in the browser - zones, captured views, uploaded clips -
+lives in that browser. That is right while drawing and useless afterwards: a
+visitor has none of it. The Publish section in the author panel is the bridge.
+
+**Publish zone map** rewrites `src/areas.published.ts` and commits it. It is a
+TypeScript module rather than JSON so it compiles into the bundle: a visitor has
+the zones before the first frame, with no fetch to wait for and nothing to fail.
+
+**Publish clip for this zone** commits the uploaded video to
+`public/clips/<zone-id>.mp4`, which is served at `/clips/<zone-id>.mp4`.
+
+Either one triggers a Vercel rebuild, so changes are live in a minute or so.
+
+### Setting it up (once)
+
+The GitHub token stays on the server. A token in the browser is a token anyone
+who opens the site can read, and this one can write to the repository.
+
+In the Vercel project, Settings -> Environment Variables:
+
+| Name | Value |
+| --- | --- |
+| `GITHUB_TOKEN` | fine-grained token, Contents: read and write, this repo only |
+| `GITHUB_REPO` | `dannygruberbackup-design/bellbird-presenter` |
+| `PUBLISH_KEY` | any string you choose |
+
+Then enter the same `PUBLISH_KEY` once in the author panel. It is kept in your
+browser, not in the build.
+
+### The size limit is real
+
+A serverless request body is capped at roughly 4.5MB, so clips must be under
+about 4MB. Binary is sent raw rather than base64 for this reason - encoding
+would spend a third of the budget on nothing. Longer clips need either
+compression or a proper video host, and the host is the better answer once
+there are nineteen of them.
