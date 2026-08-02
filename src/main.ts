@@ -28,6 +28,8 @@ import {
   isPlaced,
   buildingAngle,
   setBuildingAngle,
+  aisleReach,
+  setAisleReach,
   type Area,
 } from './areas';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
@@ -542,6 +544,16 @@ function wireAreaAuthoring(mpSdk: any): void {
   // is axis-aligned to the walls; Matterport's axes are aligned to however the
   // scan happened to start. Nineteen per-zone rotations would be nineteen
   // chances to get the same number slightly wrong.
+  const reach = document.querySelector('#aisle-reach') as HTMLInputElement;
+  const reachOut = document.querySelector('#aisle-reach-value') as HTMLOutputElement;
+  reach.value = String(aisleReach());
+  reachOut.textContent = `${aisleReach().toFixed(1)} m`;
+  reach.addEventListener('input', () => {
+    const metres = Number(reach.value);
+    reachOut.textContent = `${metres.toFixed(1)} m`;
+    setAisleReach(metres);
+  });
+
   angle.addEventListener('input', () => {
     const degrees = Number(angle.value);
     angleOut.textContent = `${degrees.toFixed(1)}\u00b0`;

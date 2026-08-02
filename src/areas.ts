@@ -62,6 +62,8 @@ type Stored = {
   byArea: Record<AreaId, AreaState>;
   /** How far the building is turned from Matterport's world axes, in degrees. */
   buildingAngle?: number;
+  /** How far from a display still counts as being at it, in metres. */
+  aisleReach?: number;
 };
 
 const KEY = 'presenter.areas.v2';
@@ -138,26 +140,47 @@ export function areaCentre(state: AreaState): Point | null {
 }
 
 /**
- * Every zone a point falls inside \u2014 plural, deliberately.
+ * How far a point is from a zone's rectangle. Zero when inside it.
  *
- * The plan nests zones: Pollination Station sits inside the STEM end of the
- * room, Sensory Tiles runs along the edge of Literacy. Picking one winner would
- * be the app guessing which one the visitor meant. Reporting all of them and
- * letting the visitor choose is honest, and it is what the map actually says.
+ * Distance rather than inside-or-out, because a zone marks where the *products*
+ * are, not where anyone walks. The visitor stands in the aisle beside a display,
+ * which is outside every rectangle on the plan — so an inside test reports them
+ * as being nowhere, in the middle of a showroom.
+ */
+export function distanceToArea(point: { x: number; z: number }, state: AreaState): number {
+  if (!isPlaced(state)) return Infinity;
+
+  const here = intoBuildingFrame(point);
+  const a = intoBuildingFrame(state.cornerA!);
+  const b = intoBuildingFrame(state.cornerB!);
+
+  const dx = Math.max(Math.min(a.x, b.x) - here.x, 0, here.x - Math.max(a.x, b.x));
+  const dz = Math.max(Math.min(a.z, b.z) - here.z, 0, here.z - Math.max(a.z, b.z));
+  return Math.hypot(dx, dz);
+}
+
+/** How far from a display still counts as being at it, in metres. */
+export function aisleReach(): number {
+  return cache.aisleReach ?? 2;
+}
+
+export function setAisleReach(metres: number): void {
+  cache.aisleReach = metres;
+  persist();
+}
+
+/**
+ * Every zone within reach, nearest first — plural, deliberately.
+ *
+ * Overlap is expected, and so is being near several displays at once: the plan
+ * nests zones, and an aisle can run between three of them. Picking one winner
+ * would be the app guessing which the visitor meant. Ordering by distance puts
+ * the likeliest first without hiding the rest.
  */
 export function areasAt(point: { x: number; z: number }): Area[] {
-  const here = intoBuildingFrame(point);
-
   return placedAreas()
-    .filter(({ state }) => {
-      const a = intoBuildingFrame(state.cornerA!);
-      const b = intoBuildingFrame(state.cornerB!);
-      return (
-        here.x >= Math.min(a.x, b.x) &&
-        here.x <= Math.max(a.x, b.x) &&
-        here.z >= Math.min(a.z, b.z) &&
-        here.z <= Math.max(a.z, b.z)
-      );
-    })
-    .map(({ area }) => area);
+    .map(({ area, state }) => ({ area, distance: distanceToArea(point, state) }))
+    .filter((entry) => entry.distance <= aisleReach())
+    .sort((a, b) => a.distance - b.distance)
+    .map((entry) => entry.area);
 }

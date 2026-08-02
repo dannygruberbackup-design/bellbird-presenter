@@ -9,7 +9,16 @@
 // So rather than eyeballing nineteen slabs, the map is measured against what is
 // known: the building's own extent, and each zone against its neighbours.
 
-import { AREAS, areaState, buildingAngle, isPlaced, type Area, type AreaState } from './areas';
+import {
+  AREAS,
+  aisleReach,
+  areaState,
+  buildingAngle,
+  distanceToArea,
+  isPlaced,
+  type Area,
+  type AreaState,
+} from './areas';
 import type { Sweep } from './sweeps';
 
 export type Finding = {
@@ -105,25 +114,28 @@ export function checkZones(sweeps: Sweep[]): Finding[] {
       }
     }
 
-    // A zone containing no circle is a zone nobody can walk into, so its guide
-    // can never be triggered by proximity however correct the rectangle looks.
-    const inside = sweeps.filter((s) => {
-      const p = local(s, angle);
-      return p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ;
-    }).length;
-    if (inside === 0) {
+    // What matters is whether a visitor can get near the display, not whether
+    // they can stand on it. A zone marks where the products are; the aisle
+    // beside it is where anyone actually walks.
+    const state = areaState(box.area.id);
+    const reachable = sweeps.filter((s) => distanceToArea(s, state) <= aisleReach()).length;
+    if (reachable === 0) {
       findings.push({
         level: 'error',
-        text: `${name} contains no floor circles \u2014 a visitor can never be inside it.`,
+        text: `${name} has no floor circle within ${aisleReach()}m \u2014 unreachable.`,
       });
-    } else if (inside === 1) {
-      findings.push({ level: 'warn', text: `${name} contains only one floor circle.` });
+    } else if (reachable < 3) {
+      findings.push({
+        level: 'warn',
+        text: `${name} has only ${reachable} circle${reachable === 1 ? '' : 's'} within reach.`,
+      });
     }
   }
 
-  // Overlaps are expected \u2014 the plan nests zones deliberately \u2014 so these are
-  // reported for eyeballing rather than flagged as faults. Near-total overlap
-  // is different: that is usually two zones sharing a corner by mistake.
+  // Overlap is normal and mostly not worth mentioning: the rectangles mark
+  // product footprints, which butt up against each other and nest by design.
+  // Only near-identical pairs are reported, because that is two zones sharing a
+  // corner by mistake rather than two displays standing side by side.
   for (let i = 0; i < boxes.length; i += 1) {
     for (let j = i + 1; j < boxes.length; j += 1) {
       const shared = overlapArea(boxes[i], boxes[j]);
@@ -137,13 +149,6 @@ export function checkZones(sweeps: Sweep[]): Finding[] {
         findings.push({
           level: 'error',
           text: `${boxes[i].area.name} and ${boxes[j].area.name} are almost the same rectangle.`,
-        });
-      } else if (worst > 0.25) {
-        findings.push({
-          level: 'warn',
-          text: `${boxes[i].area.name} and ${boxes[j].area.name} overlap by ${Math.round(
-            worst * 100,
-          )}%.`,
         });
       }
     }
