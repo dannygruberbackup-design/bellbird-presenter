@@ -54,8 +54,17 @@ export type AreaState = {
   /** Opposite corners of the zone, in world space. Both needed to be placed. */
   cornerA?: Point;
   cornerB?: Point;
-  /** True once a clip has been stored for this zone. */
+  /** True once a clip has been stored on this device for this zone. */
   hasVideo?: boolean;
+
+  /**
+   * A hosted clip for this zone, served with the site.
+   *
+   * The uploaded copy is for authoring: it lives in this browser and no visitor
+   * will ever see it. A published tour needs its videos on a URL like any other
+   * asset, so this is what a visitor plays and the upload is what you preview.
+   */
+  videoUrl?: string;
 
   // The authored viewpoint: which circle to stand on and which way to look.
   //

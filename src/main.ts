@@ -433,7 +433,7 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       play.textContent = '\u25b6';
       play.title = `Bring the guide to ${area.name}`;
       play.setAttribute('aria-label', play.title);
-      play.disabled = areaState(area.id).hasVideo !== true;
+      play.disabled = !hasAnyClip(area.id);
       play.addEventListener('click', () => void call(area));
 
       li.append(go, play);
@@ -478,7 +478,7 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
         play.textContent = '\u25b6';
         play.title = `Bring the guide to ${area.name}`;
         play.setAttribute('aria-label', play.title);
-        play.disabled = areaState(area.id).hasVideo !== true;
+        play.disabled = !hasAnyClip(area.id);
         play.addEventListener('click', () => void call(area));
 
         line.append(name, play);
@@ -557,14 +557,24 @@ async function useAreaClip(area: Area): Promise<void> {
   if (!handle) return;
   if (lastClip === area.id) return;
 
+  // A clip uploaded here wins, because that is what you are previewing. Failing
+  // that, the hosted one, which is the only version a visitor can ever play.
   const saved = await loadVideo(`area:${area.id}`);
-  if (!saved) {
+  const source = saved ? URL.createObjectURL(saved.blob) : areaState(area.id).videoUrl;
+
+  if (!source) {
     diag.warn(`No clip for ${area.name} yet.`);
     return;
   }
 
-  handle.component.useVideo(URL.createObjectURL(saved.blob), area.name);
+  handle.component.useVideo(source, area.name);
   lastClip = area.id;
+}
+
+/** Whether a zone has a guide at all, from either source. */
+function hasAnyClip(id: string): boolean {
+  const state = areaState(id);
+  return state.hasVideo === true || Boolean(state.videoUrl);
 }
 
 /** Which zone's clip is currently loaded, so it is not reloaded needlessly. */
