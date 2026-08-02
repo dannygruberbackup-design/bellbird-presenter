@@ -1,5 +1,6 @@
 import type { PresenterHandle } from './scene';
-import { nearestSweep } from './sweeps';
+import { allSweeps, nearestSweep } from './sweeps';
+import { areaState, distanceToArea, type Area } from './areas';
 import { diag } from './diagnostics';
 
 // The areas of the showroom, as a visitor experiences them.
@@ -81,4 +82,43 @@ export async function lookAt(
     // Older bundles expose rotate() instead; not worth failing the summon over.
     diag.warn('Could not turn the camera.');
   }
+}
+
+
+/**
+ * The best spot for the guide to stand when a zone is called.
+ *
+ * Not simply the centre of the rectangle: that is where the products are, and
+ * she would end up inside a shelf. Not simply two metres in front of the
+ * visitor either, because for a zone the point is that she is standing *at the
+ * display* being talked about.
+ *
+ * So: floor circles near the zone, and of those the one closest to the visitor.
+ * Circles are where the capture camera stood, so every candidate is somewhere a
+ * person can be; picking the nearest to the viewer means she appears on their
+ * side of the display rather than behind it.
+ */
+export function bestSpotFor(
+  area: Area,
+  from: { x: number; z: number },
+  reach: number,
+  floorOffset: number,
+): { x: number; y: number; z: number } | null {
+  const state = areaState(area.id);
+  const candidates = allSweeps().filter((s) => distanceToArea(s, state) <= reach);
+  if (candidates.length === 0) return null;
+
+  let best = candidates[0];
+  let bestDistance = Infinity;
+  for (const circle of candidates) {
+    const distance = Math.hypot(circle.x - from.x, circle.z - from.z);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = circle;
+    }
+  }
+
+  // A circle records eye height, so the floor is that minus the capture
+  // camera's height above it.
+  return { x: best.x, y: best.y - floorOffset, z: best.z };
 }

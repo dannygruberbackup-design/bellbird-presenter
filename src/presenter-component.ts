@@ -75,8 +75,6 @@ export const DEFAULT_PRESENTER: PresenterInputs = {
   cropBottom: 0,
   groundOffset: 0,
   mode: 'always',
-  // Parked. The ring works, but the Areas menu now carries the job it was
-  // doing, and two things pointing at the same guide is one too many.
   triggerRadius: 2.5,
   shadowDiameter: 1.65,
   shadowOpacity: 0.55,
@@ -103,24 +101,6 @@ function mediaHost(): HTMLElement {
   }
   return host;
 }
-
-// A floating ring with a speech notch, drawn rather than imported so there is
-// no asset to host and it recolours with one line.
-// Two markers in one group, so switching style is a visibility flip rather
-// than a rebuild.
-//
-// The spinning form is a real torus rather than a picture of a ring: a flat
-// image rotating about its own vertical axis vanishes edge-on twice a turn,
-// which reads as a flicker rather than a rotation. A torus stays solid from
-// every angle.
-//
-// The static form is a flat disc. Because both hang off the presenter's root,
-// which already yaws to face the viewer, the disc is always presented squarely
-// without any billboarding of its own.
-
-
-
-
 
 function makeShadowTexture(THREE: any): any {
   const size = 128;
@@ -367,9 +347,7 @@ export class ChromaPresenterComponent {
     this.applyMode();
   }
 
-  /** Resting orientation in degrees, so the block can sit against anything. */
   /** How close a visitor must come before she appears. */
-  /** Ring rotations per minute. */
   setTriggerRadius(metres: number): void {
     this.inputs.triggerRadius = Math.max(0.5, metres);
   }
@@ -444,10 +422,6 @@ export class ChromaPresenterComponent {
   }
 
   onTick() {
-    // Only the spinning style animates. Turning the static disc would defeat
-    // the point of offering it, and the height must come from the input rather
-    // than a constant or the Marker height slider is overwritten every frame.
-
     if (this.inputs.mode === 'onApproach') this.applyMode();
     if (!this.inputs.billboard || !this.root?.visible) return;
     if (!this.camera?.copyPositionInto(this.tmpCamPos)) return;

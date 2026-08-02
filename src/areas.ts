@@ -106,6 +106,11 @@ export function setBuildingAngle(degrees: number): void {
   persist();
 }
 
+/** Zones that have a clip stored against them. */
+export function hasClip(id: AreaId): boolean {
+  return Boolean(areaState(id).hasVideo);
+}
+
 export function clearAreas(): void {
   cache = { byArea: {} };
   persist();

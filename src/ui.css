@@ -44,6 +44,9 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
 #controls { position:fixed; right:1rem; top:1rem; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:0.4rem; max-width:calc(100vw - 2rem); z-index:25; }
 #controls button { min-height:44px; padding:0.5rem 1rem; border:1px solid rgba(232,230,225,0.22); border-radius:999px; background:var(--scrim); backdrop-filter:blur(12px); color:var(--mist); font:500 0.78rem var(--ui-sans); cursor:pointer; }
 #controls button[aria-pressed='true'] { border-color:rgba(232,230,225,0.5); }
+/* The Areas button names the zone you are in, so it needs to read as live
+   rather than as one more control. */
+#controls #stations-toggle.here { border-color:var(--tally); background:rgba(224,54,44,0.18); }
 #stations { position:fixed; right:1rem; top:4.5rem; width:min(15rem,calc(100vw - 2rem)); max-height:60dvh; overflow:auto; padding:0.8rem; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:var(--scrim); backdrop-filter:blur(14px); z-index:26; }
 #stations .group { margin:0 0 0.5rem; font-size:0.66rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:rgba(232,230,225,0.5); }
 #station-list { margin:0; padding:0; list-style:none; }

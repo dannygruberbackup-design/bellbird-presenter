@@ -16,7 +16,7 @@ import { saveVideo, loadVideo, clearVideo } from './video-store';
 import { subscribeSweeps, nearestSweep, allSweeps } from './sweeps';
 import { calibrate, type ScreenToWorld } from './plan-mapping';
 import { checkZones, exportZones } from './zone-check';
-import { goToStation, lookAt } from './stations';
+import { goToStation, lookAt, bestSpotFor } from './stations';
 import type { ZoneOverlayComponent } from './zone-overlay';
 import {
   AREAS,
@@ -26,11 +26,11 @@ import {
   saveArea,
   placedAreas,
   isPlaced,
-  bestSpotFor,
   buildingAngle,
   setBuildingAngle,
   aisleReach,
   setAisleReach,
+  hasClip,
   type Area,
 } from './areas';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
@@ -330,12 +330,32 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
     const centre = areaCentre(areaState(area.id));
     if (!centre) return;
     close();
+
     await goToStation(
       mpSdk,
       { handle: handles[0], label: area.name },
       async () => {
         await useAreaClip(area);
-        placeAtZone(area, director, mpSdk);
+
+        const handle = handles[0];
+        const from = handle?.component.viewerPosition();
+        if (!handle || !from) return;
+
+        // She stands at the display being talked about, not a fixed distance in
+        // front of whoever asked. The zone is the subject; putting her two
+        // metres from the visitor would have her describing a shelf she has her
+        // back to.
+        const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
+        const spot = bestSpotFor(area, from, aisleReach(), floorOffset);
+        if (spot) {
+          handle.component.setVisible(true);
+          handle.setPosition(spot);
+          saveFor(handle.id, { position: spot, visible: true });
+          void lookAt(mpSdk, spot, from);
+        }
+
+        director.unmute();
+        director.replay(handle.id);
       },
       centre,
     );
@@ -387,8 +407,16 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
     }
   };
 
+  // Repainted whether or not the menu is open, because the button itself is
+  // the ambient answer to "where am I" \u2014 having to open a panel to find out
+  // defeats the point of the question.
   window.setInterval(() => {
     if (!panel.hidden) paint();
+
+    const from = handles[0]?.component.viewerPosition();
+    const nearest = from ? areasAt(from)[0] : null;
+    toggle.textContent = nearest ? nearest.name : 'Areas';
+    toggle.classList.toggle('here', Boolean(nearest));
   }, 250);
 
   toggle.addEventListener('click', () => {
@@ -418,28 +446,6 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
  * of its own within reach \u2014 better a guide slightly out of place than a play
  * button that silently does nothing.
  */
-function placeAtZone(area: Area, director: ReturnType<typeof createDirector>, mpSdk: any): void {
-  const handle = handles[0];
-  const from = handle?.component.viewerPosition();
-  const spot = from ? bestSpotFor(areaState(area.id), from, allSweeps()) : null;
-
-  if (!spot || !from) {
-    summon(director, mpSdk);
-    return;
-  }
-
-  const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
-  const target = { x: spot.x, y: spot.y - floorOffset, z: spot.z };
-
-  handle.component.setVisible(true);
-  handle.setPosition(target);
-  saveFor(handle.id, { position: target, visible: true });
-
-  void lookAt(mpSdk, target, from);
-  director.unmute();
-  director.replay(handle.id);
-  diag.info(`${area.name}: guide placed at the display.`);
-}
 
 /**
  * Hands the guide the clip that belongs to this zone.
