@@ -78,11 +78,12 @@ export type PresenterInputs = ChromaKeyOptions & {
   // sign hangs off the presenter's root instead, which already faces the
   // viewer, so it is always square-on while the blocks spin beneath it.
   signText: string;
-  /** Sign height in metres. Width follows the text. */
+  /** Cap height in metres — the actual size of the letters in the room. */
   signSize: number;
-  /** Cap height as a fraction of the sign's height. */
-  signFont: number;
-  signShape: 'rect' | 'rounded' | 'pill';
+  /** Text colour as hex. */
+  signColour: string;
+  /** Gap between the top of the ring and the baseline of the text, in metres. */
+  signGap: number;
   /** Show a floating marker when she is not speaking. */
   beacon: boolean;
   shadowDiameter: number;
@@ -110,9 +111,9 @@ export const DEFAULT_PRESENTER: PresenterInputs = {
   beacon: true,
   beaconStyle: 'spin',
   signText: '',
-  signSize: 0.34,
-  signFont: 0.42,
-  signShape: 'rounded',
+  signSize: 0.2,
+  signColour: '#ffffff',
+  signGap: 0.18,
   beaconSpeed: 8,
   beaconTurn: 0,
   beaconTilt: 0,
@@ -221,73 +222,56 @@ function blockFace(THREE: any, colour: string, letter?: string): any {
   return texture;
 }
 
-// The sign, drawn as a glazed label to match the blocks.
+// Floating text, no plate.
 //
-// Off-white rather than white: a pure white panel next to saturated ceramic
-// reads as a UI overlay pasted onto the scene, where a warm off-white reads as
-// an object in the room. The keyline is the wordmark's red, which ties it to
-// the blocks without competing with them.
+// A rounded panel with a keyline is interface language: it reads as a chip
+// pasted onto the glass rather than something in the room, and next to eight
+// ceramic blocks that mismatch is glaring. Letters alone sit in the space.
+//
+// The cost of dropping the plate is legibility — white text over a bright
+// window disappears. So the glyphs carry a soft dark shadow: not a shape, just
+// enough separation to hold an edge against anything behind them. It is drawn
+// twice because one pass is too faint to survive a sunlit wall.
 function makeSign(THREE: any, inputs: any): any {
   const text = String(inputs.signText ?? '').trim();
   if (!text) return null;
 
-  const H = 256;
-  const pad = H * 0.34;
-  const radius =
-    inputs.signShape === 'pill' ? H / 2 : inputs.signShape === 'rounded' ? H * 0.18 : 0;
-
-  // Measure first, then size the canvas to the text. Fixing the canvas and
-  // shrinking the text to fit makes every sign a different size on screen;
-  // fixing the height and letting width follow keeps them a consistent family.
-  const cap = Math.max(H * 0.16, Math.min(H * 0.62, H * inputs.signFont));
-  const font = `600 ${cap}px ui-sans-serif, system-ui, "Segoe UI", sans-serif`;
+  // Working resolution. The plane is then scaled so a cap ends up exactly
+  // signSize metres tall, which is why this number never has to be tuned.
+  const cap = 160;
+  const pad = cap * 0.55;
+  const font = `700 ${cap}px ui-sans-serif, system-ui, "Segoe UI", sans-serif`;
 
   const gauge = document.createElement('canvas').getContext('2d')!;
   gauge.font = font;
-  const W = Math.ceil(Math.min(2048, gauge.measureText(text).width + pad * 2));
+
+  const W = Math.ceil(Math.min(3072, gauge.measureText(text).width + pad * 2));
+  const H = Math.ceil(cap + pad * 2);
 
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
-  const panel = (inset: number) => {
-    ctx.beginPath();
-    ctx.roundRect(inset, inset, W - inset * 2, H - inset * 2, Math.max(0, radius - inset));
-    ctx.closePath();
-  };
-
-  ctx.fillStyle = '#f7f4ee';
-  panel(0);
-  ctx.fill();
-
-  // A soft top-down shading, the same trick as the block glaze, so the sign
-  // sits in the same light rather than looking flat beside them.
-  const glaze = ctx.createLinearGradient(0, 0, 0, H);
-  glaze.addColorStop(0, 'rgba(255,255,255,0.55)');
-  glaze.addColorStop(0.55, 'rgba(255,255,255,0)');
-  glaze.addColorStop(1, 'rgba(0,0,0,0.10)');
-  ctx.fillStyle = glaze;
-  panel(0);
-  ctx.fill();
-
-  ctx.strokeStyle = '#e20a22';
-  ctx.lineWidth = H * 0.045;
-  panel(ctx.lineWidth / 2);
-  ctx.stroke();
-
-  ctx.fillStyle = '#1d2430';
   ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, W / 2, H * 0.54);
+
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = cap * 0.22;
+  ctx.shadowOffsetY = cap * 0.05;
+
+  ctx.fillStyle = inputs.signColour || '#ffffff';
+  ctx.fillText(text, W / 2, H / 2);
+  ctx.fillText(text, W / 2, H / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.anisotropy = 4;
 
-  const height = inputs.signSize;
+  // Scale from the working resolution to metres via the cap height.
+  const metresPerPixel = inputs.signSize / cap;
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(height * (W / H), height),
+    new THREE.PlaneGeometry(W * metresPerPixel, H * metresPerPixel),
     new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
@@ -299,6 +283,7 @@ function makeSign(THREE: any, inputs: any): any {
   mesh.renderOrder = 12;
   return mesh;
 }
+
 
 function makeBeacon(THREE: any): any {
   const group = new THREE.Object3D();
@@ -664,11 +649,12 @@ export class ChromaPresenterComponent {
     this.applyBeacon();
   }
 
-  setSign(text: string, size: number, font: number, shape: 'rect' | 'rounded' | 'pill'): void {
+  /** Text, cap height in metres, colour, and gap above the ring in metres. */
+  setSign(text: string, size: number, colour: string, gap: number): void {
     this.inputs.signText = text;
-    this.inputs.signSize = Math.max(0.05, size);
-    this.inputs.signFont = font;
-    this.inputs.signShape = shape;
+    this.inputs.signSize = Math.max(0.02, size);
+    this.inputs.signColour = colour;
+    this.inputs.signGap = gap;
     this.rebuildSign();
   }
 
@@ -703,11 +689,10 @@ export class ChromaPresenterComponent {
     );
 
     if (this.sign) {
-      // Clear of the ring at any size or angle: half the ring's own extent plus
-      // half the sign, plus a small breath. Measured rather than a constant, so
-      // resizing either one never has them overlap.
-      const clearance = beaconSize * 0.8 + this.inputs.signSize * 0.5 + 0.06;
-      this.sign.position.y = beaconHeight + clearance;
+      // Above the ring's own extent, then the gap you asked for. Measured from
+      // the ring rather than a constant, so resizing it never has them collide.
+      this.sign.position.y =
+        beaconHeight + beaconSize * 0.8 + this.inputs.signSize * 0.5 + this.inputs.signGap;
     }
   }
 

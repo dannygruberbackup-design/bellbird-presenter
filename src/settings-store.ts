@@ -43,8 +43,8 @@ export type PresenterSettings = {
   beaconSpeed?: number;
   signText?: string;
   signSize?: number;
-  signFont?: number;
-  signShape?: 'rect' | 'rounded' | 'pill';
+  signColour?: string;
+  signGap?: number;
   beaconTurn?: number;
   beaconTilt?: number;
   beaconRoll?: number;

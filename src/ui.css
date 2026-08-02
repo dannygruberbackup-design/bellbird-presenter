@@ -31,6 +31,7 @@ matterport-viewer { display:block; width:100vw; height:100dvh; }
 .field > span { display:block; margin-bottom:0.25rem; font-size:0.74rem; color:rgba(232,230,225,0.78); }
 .field input { width:100%; min-height:38px; padding:0.35rem 0.6rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:transparent; color:var(--mist); font:500 0.82rem var(--ui-sans); }
 .field input:focus-visible { outline:2px solid var(--tally); outline-offset:2px; }
+.field.swatch input[type='color'] { width:100%; height:38px; padding:2px; cursor:pointer; }
 .slider { display:block; margin-bottom:0.6rem; }
 .slider > span { display:flex; justify-content:space-between; margin-bottom:0.25rem; font-size:0.74rem; color:rgba(232,230,225,0.78); }
 .slider output { font-family:var(--ui-mono); color:var(--mist); }

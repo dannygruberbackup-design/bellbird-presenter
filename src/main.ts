@@ -182,9 +182,9 @@ function applySavedSettings() {
     if (saved.signText !== undefined || saved.signSize !== undefined) {
       handle.component.setSign(
         saved.signText ?? '',
-        saved.signSize ?? 0.34,
-        saved.signFont ?? 0.42,
-        saved.signShape ?? 'rounded',
+        saved.signSize ?? 0.2,
+        saved.signColour ?? '#ffffff',
+        saved.signGap ?? 0.18,
       );
     }
     if (saved.triggerRadius !== undefined) {
@@ -411,7 +411,7 @@ function enableDevTools(mpSdk: any, director: ReturnType<typeof createDirector>)
   wirePlacementButtons(placement, onMoved);
   wirePresenterControls(refresh);
   wireMarkerControls(refresh);
-  wireSignControls(refresh);
+  wireSignControls();
   wireFramingControls();
   wireShadowControls();
   wireSpaceControls();
@@ -555,10 +555,10 @@ function syncControlsToSelection() {
 
   const signField = document.querySelector('#sign-text') as HTMLInputElement;
   signField.value = saved.signText ?? '';
-  setSlider('#sign-size', '#sign-size-value', saved.signSize ?? 0.34, (v) => `${v.toFixed(2)} m`);
-  setSlider('#sign-font', '#sign-font-value', saved.signFont ?? 0.42, pct);
-  const shapeButton = document.querySelector('#sign-shape') as HTMLButtonElement;
-  shapeButton.textContent = `Shape: ${saved.signShape ?? 'rounded'}`;
+  (document.querySelector('#sign-colour') as HTMLInputElement).value =
+    saved.signColour ?? '#ffffff';
+  setSlider('#sign-size', '#sign-size-value', saved.signSize ?? 0.2, (v) => `${v.toFixed(2)} m`);
+  setSlider('#sign-gap', '#sign-gap-value', saved.signGap ?? 0.18, (v) => `${v.toFixed(2)} m`);
 
   const beaconButton = document.querySelector('#beacon-style') as HTMLButtonElement;
   const style = saved.beaconStyle ?? 'spin';
@@ -795,40 +795,24 @@ function wireMarkerControls(refresh: () => void) {
   });
 }
 
-const SIGN_SHAPES = ['rounded', 'rect', 'pill'] as const;
-
-function wireSignControls(refresh: () => void) {
+function wireSignControls() {
   const apply = () => {
     const handle = current();
     if (!handle) return;
     const text = (document.querySelector('#sign-text') as HTMLInputElement).value;
+    const colour = (document.querySelector('#sign-colour') as HTMLInputElement).value;
     const size = Number((document.querySelector('#sign-size') as HTMLInputElement).value);
-    const font = Number((document.querySelector('#sign-font') as HTMLInputElement).value);
-    const shape = handle.component.inputs.signShape;
-    handle.component.setSign(text, size, font, shape);
-    saveFor(handle.id, { signText: text, signSize: size, signFont: font, signShape: shape });
+    const gap = Number((document.querySelector('#sign-gap') as HTMLInputElement).value);
+    handle.component.setSign(text, size, colour, gap);
+    saveFor(handle.id, { signText: text, signSize: size, signColour: colour, signGap: gap });
   };
 
-  // The sign is redrawn on every keystroke, which is cheap enough at this size
-  // and means the text is judged in the room rather than in the field.
+  // Redrawn on every keystroke and every drag: cheap at this size, and it means
+  // the text is judged in the room rather than in the field.
   document.querySelector('#sign-text')!.addEventListener('input', apply);
+  document.querySelector('#sign-colour')!.addEventListener('input', apply);
   onSlider('#sign-size', '#sign-size-value', (v) => `${v.toFixed(2)} m`, apply);
-  onSlider('#sign-font', '#sign-font-value', pct, apply);
-
-  document.querySelector('#sign-shape')!.addEventListener('click', () => {
-    const handle = current();
-    if (!handle) return;
-    const now = handle.component.inputs.signShape;
-    const next = SIGN_SHAPES[(SIGN_SHAPES.indexOf(now) + 1) % SIGN_SHAPES.length];
-    saveFor(handle.id, { signShape: next });
-    handle.component.setSign(
-      handle.component.inputs.signText,
-      handle.component.inputs.signSize,
-      handle.component.inputs.signFont,
-      next,
-    );
-    refresh();
-  });
+  onSlider('#sign-gap', '#sign-gap-value', (v) => `${v.toFixed(2)} m`, apply);
 }
 
 function wireFramingControls() {
