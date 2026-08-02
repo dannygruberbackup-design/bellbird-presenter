@@ -47,15 +47,18 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
 /* The Areas button names the zone you are in, so it needs to read as live
    rather than as one more control. */
 #controls #stations-toggle.here { border-color:var(--tally); background:rgba(224,54,44,0.18); }
-/* Two columns, so all nineteen zones are on screen at once. Scrolling a list
-   of places you might go defeats the point of offering them. */
-#stations { position:fixed; right:1rem; top:4.5rem; width:min(25rem,calc(100vw - 2rem)); max-height:calc(100dvh - 6rem); overflow:auto; padding:0.8rem; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:var(--scrim); backdrop-filter:blur(14px); z-index:26; }
+/* Small by default: only the zones you are standing in. Nineteen names is a
+   directory, and a directory is not what someone wants while walking. */
+#stations { position:fixed; right:1rem; top:4.5rem; width:min(15rem,calc(100vw - 2rem)); max-height:calc(100dvh - 6rem); overflow:auto; padding:0.8rem; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:var(--scrim); backdrop-filter:blur(14px); z-index:26; }
 #stations .group { margin:0 0 0.5rem; font-size:0.66rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:rgba(232,230,225,0.5); }
-#station-list { display:grid; grid-template-columns:1fr 1fr; gap:0.3rem; margin:0 0 0.5rem; padding:0; list-style:none; }
-@media (max-width: 30rem) { #station-list { grid-template-columns:1fr; } }
+#station-list { margin:0 0 0.4rem; padding:0; list-style:none; }
 /* Name and guide button share a row: the name is the place, the button is the
    person. Splitting them into two lists would double the height for no gain. */
-#station-list li { display:flex; gap:0.25rem; margin:0; min-width:0; }
+/* Rows animate rather than appear: a name that pops in as you walk past a
+   display reads as a glitch, where the same name easing in reads as the room
+   noticing you. */
+#station-list li { display:flex; gap:0.25rem; min-width:0; overflow:hidden; max-height:3rem; margin-bottom:0.3rem; opacity:1; transition:max-height 260ms ease, opacity 200ms ease, margin 260ms ease; }
+#stations:not(.expanded) #station-list li:not(.here) { max-height:0; opacity:0; margin-bottom:0; pointer-events:none; }
 #stations button { min-height:38px; padding:0.35rem 0.5rem; border:1px solid rgba(232,230,225,0.18); border-radius:6px; background:transparent; color:var(--mist); font:500 0.72rem/1.25 var(--ui-sans); text-align:left; cursor:pointer; }
 /* Names wrap rather than truncate: "Toddlers (12mths-2yrs)" cut short reads as
    a different zone from the one on the plan. */
@@ -69,7 +72,11 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
    plainly which zone you are standing in. */
 #station-list .call { opacity:0.45; }
 #station-list .call.ready { opacity:1; }
-#walkthrough { width:100%; border-color:var(--tally) !important; text-align:center !important; margin-top:0.2rem; }
+#station-expand, #walkthrough { width:100%; text-align:center !important; margin-top:0.2rem; }
+#walkthrough { border-color:var(--tally) !important; }
+/* Shown but plainly not ready. It still works from anywhere - the dimming says
+   which zone you are in, not which buttons are allowed. */
+#station-list .call:disabled { opacity:0.25; cursor:default; }
 #station-list:empty::after { content:"No stops placed yet."; display:block; font-size:0.78rem; color:rgba(232,230,225,0.55); }
 /* Swallows the drag so Matterport cannot pan the plan underneath it.
    Deliberately below every panel: the layer only has to cover the viewer, and

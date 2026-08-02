@@ -308,6 +308,9 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   if (!panel || !toggle || !list) return;
 
   let rows: { area: Area; li: HTMLElement; play: HTMLButtonElement }[] = [];
+  let expanded = false;
+  const empty = document.querySelector('#station-empty') as HTMLElement;
+  const expand = document.querySelector('#station-expand') as HTMLButtonElement;
 
   const close = () => {
     panel.hidden = true;
@@ -360,7 +363,11 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
     );
   };
 
-  const rebuild = () => {
+  // Built once, then only its classes change. Rebuilding the list on every
+  // repaint would restart the transitions four times a second, so nothing would
+  // ever finish easing in.
+  const build = () => {
+    if (rows.length) return;
     list.textContent = '';
     rows = placedAreas().map(({ area }) => {
       const li = document.createElement('li');
@@ -369,6 +376,8 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       go.type = 'button';
       go.className = 'go';
       go.textContent = area.name;
+      // Works whether or not you are standing there: picking a zone you can see
+      // across the room is a perfectly ordinary thing to want.
       go.addEventListener('click', () => void travel(area));
 
       const play = document.createElement('button');
@@ -379,48 +388,45 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       play.setAttribute('aria-label', play.title);
       play.addEventListener('click', () => void call(area));
 
-      // A zone with no recording gets no play button at all. A button that
-      // does nothing teaches a visitor to stop trusting the buttons.
-      li.append(go);
-      if (areaState(area.id).hasVideo) li.append(play);
+      li.append(go, play);
       list.appendChild(li);
       return { area, li, play };
     });
     paint();
   };
 
-  /** Lights the zone the visitor is standing in and readies its guide. */
+  /** Lights the zones you are standing in and readies their guides. */
   const paint = () => {
     const from = handles[0]?.component.viewerPosition();
-    // Plural: nested zones both report, and the visitor decides which they
-    // meant. Standing at the pollination table you are in Pollination Station
-    // and in STEM, and the menu should say so rather than pick for you.
     const here = from ? areasAt(from).map((a) => a.id) : [];
+
     for (const row of rows) {
       const inside = here.includes(row.area.id);
       row.li.classList.toggle('here', inside);
-      // Dimmed rather than disabled when you are elsewhere: it still works, so
-      // the decided visitor gets one tap, while the styling says plainly that
-      // this is the zone you are in and that one is not.
-      row.play.classList.toggle('ready', inside);
+
+      // Shown always, dimmed unless there is a clip. A button that is simply
+      // absent leaves you wondering whether you missed it; one that is visibly
+      // unavailable tells you the zone has no guide yet.
+      const ready = areaState(row.area.id).hasVideo === true;
+      row.play.disabled = !ready;
+      row.play.classList.toggle('ready', ready && inside);
     }
+
+    const showing = expanded || here.length > 0;
+    empty.hidden = showing;
   };
 
-  // Repainted whether or not the menu is open, because the button itself is
-  // the ambient answer to "where am I" \u2014 having to open a panel to find out
-  // defeats the point of the question.
-  window.setInterval(() => {
-    if (!panel.hidden) paint();
-
-    const from = handles[0]?.component.viewerPosition();
-    const nearest = from ? areasAt(from)[0] : null;
-    toggle.textContent = nearest ? nearest.name : 'Areas';
-    toggle.classList.toggle('here', Boolean(nearest));
-  }, 250);
+  expand?.addEventListener('click', () => {
+    expanded = !expanded;
+    panel.classList.toggle('expanded', expanded);
+    expand.setAttribute('aria-expanded', String(expanded));
+    expand.textContent = expanded ? 'Nearby only' : 'All areas';
+    paint();
+  });
 
   toggle.addEventListener('click', () => {
     const opening = panel.hidden;
-    if (opening) rebuild();
+    if (opening) build();
     panel.hidden = !opening;
     toggle.setAttribute('aria-expanded', String(opening));
   });
