@@ -138,14 +138,15 @@
         </label>
 
         <p class="group">Test model</p>
-        <label class="field" for="model-url">
-          <span>Model URL (.glb or .obj)</span>
-          <input id="model-url" type="url" placeholder="https://.../cube.glb" />
-        </label>
+        <div class="actions">
+          <button id="model-load" type="button">Load .glb from device</button>
+        </div>
         <div class="actions">
           <button id="model-place" type="button">Place where I stand</button>
           <button id="model-clear" type="button">Remove</button>
         </div>
+        <p class="hint" id="model-status">No model loaded.</p>
+        <input id="model-file" type="file" accept=".glb,.gltf,model/gltf-binary" hidden />
 
         <p class="group">Framing</p>
         <label class="slider" for="frame-width">

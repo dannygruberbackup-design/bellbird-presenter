@@ -733,17 +733,59 @@ function wireAreaAuthoring(mpSdk: any): void {
 
   // Dropping a model into the space.
   //
-  // Matterport ships loaders for glTF and OBJ, so the file is handed to their
-  // component rather than parsed here: their loader runs inside their renderer
-  // with their copy of three, which is the whole reason the presenter had to be
-  // built as a scene component in the first place.
+  // Uploaded rather than fetched from a URL: hosting a file somewhere public
+  // just to look at it is a chore, and one that has to be repeated every time
+  // the model changes.
+  //
+  // .glb only, and that is not a limitation of the upload. An OBJ is three
+  // files that find each other by relative path - the .obj names the .mtl, the
+  // .mtl names the .png - and a blob URL has no folder for those names to
+  // resolve against. A .glb carries its texture inside it, so there is nothing
+  // to resolve. OBJ still works when properly hosted; it just cannot be dropped
+  // in from a phone.
   let modelObject: any = null;
+  let modelUrl: string | null = null;
+
+  const modelStatus = document.querySelector('#model-status') as HTMLElement;
+  const modelFile = document.querySelector('#model-file') as HTMLInputElement;
+
+  const useModel = (blob: Blob, name: string) => {
+    if (modelUrl) URL.revokeObjectURL(modelUrl);
+    modelUrl = URL.createObjectURL(blob);
+    modelStatus.textContent = `${name} ready. Stand where you want it, then Place.`;
+  };
+
+  document.querySelector('#model-load')?.addEventListener('click', () => modelFile.click());
+
+  modelFile?.addEventListener('change', async () => {
+    const file = modelFile.files?.[0];
+    if (!file) return;
+
+    useModel(file, file.name);
+    diag.info(`${file.name}: ${(file.size / 1024 / 1024).toFixed(1)} MB`);
+
+    try {
+      // Kept on the device like the video, so it survives a reload rather than
+      // needing to be picked again every time the page refreshes.
+      await saveVideo('model:test', file);
+    } catch (error) {
+      diag.warn(`Could not keep the model on this device: ${describeError(error)}`);
+    }
+    modelFile.value = '';
+  });
+
+  void (async () => {
+    const saved = await loadVideo('model:test');
+    if (saved) {
+      useModel(saved.blob, saved.name ?? 'saved model');
+      diag.info(`Model restored (${saved.sizeMb.toFixed(1)} MB).`);
+    }
+  })();
 
   document.querySelector('#model-place')?.addEventListener('click', async () => {
-    const url = (document.querySelector('#model-url') as HTMLInputElement).value.trim();
     const from = handles[0]?.component.viewerPosition();
-    if (!url || !from) {
-      diag.warn('Need a model URL and a position.');
+    if (!modelUrl || !from) {
+      diag.warn('Load a model first, then stand where you want it.');
       return;
     }
 
@@ -757,17 +799,16 @@ function wireAreaAuthoring(mpSdk: any): void {
       const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
       (node.obj3D ?? node).position.set(from.x, from.y - floorOffset, from.z);
 
-      const isObj = url.toLowerCase().endsWith('.obj');
-      node.addComponent(isObj ? 'mp.objLoader' : 'mp.gltfLoader', { url });
+      node.addComponent('mp.gltfLoader', { url: modelUrl });
 
-      // Their loaders light with the scene, and the scene has no lights of its
+      // Their loaders shade with the scene, and the scene has no lights of its
       // own. Without this a correctly loaded model is a black silhouette, which
       // looks exactly like a broken one.
       node.addComponent('mp.lights');
 
       object.start();
       modelObject = object;
-      diag.info(`Model placed from ${url}.`);
+      modelStatus.textContent = 'Placed. Walk round it to check scale and facing.';
     } catch (error) {
       diag.error(`Could not place the model: ${describeError(error)}`);
     }
@@ -776,7 +817,7 @@ function wireAreaAuthoring(mpSdk: any): void {
   document.querySelector('#model-clear')?.addEventListener('click', () => {
     modelObject?.stop?.();
     modelObject = null;
-    diag.info('Model removed.');
+    modelStatus.textContent = modelUrl ? 'Removed. Place again to re-add.' : 'No model loaded.';
   });
 
   document.querySelector('#area-check')?.addEventListener('click', () => {
