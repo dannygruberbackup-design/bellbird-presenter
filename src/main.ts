@@ -475,8 +475,11 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
 /** The slabs, once the scene has them. Null until then, and for visitors. */
 let overlay: ZoneOverlayComponent | null = null;
 
+/** Which zone the author has selected, so the overlay can mark it out. */
+let selectedZone: string | null = null;
+
 export function refreshZoneOverlay(): void {
-  overlay?.rebuild(placedAreas(), buildingAngle());
+  overlay?.rebuild(placedAreas(), buildingAngle(), selectedZone ?? undefined);
 }
 
 function wireAreaAuthoring(mpSdk: any): void {
@@ -510,18 +513,22 @@ function wireAreaAuthoring(mpSdk: any): void {
   };
 
   const show = () => {
+    selectedZone = chosen().id;
     const state = areaState(chosen().id);
     const done = placedAreas().length;
-    const corners = `${state.cornerA ? 'A' : '\u2013'}${state.cornerB ? 'B' : '\u2013'}`;
     status.textContent = isPlaced(state)
-      ? `Placed (${corners}). ${done} of ${AREAS.length} zones set.`
-      : `Corners ${corners}. ${done} of ${AREAS.length} zones set.`;
+      ? `${chosen().name} is placed. Drag to redraw it. ${done} of ${AREAS.length} set.`
+      : `${chosen().name} not placed. ${done} of ${AREAS.length} set.`;
     angle.value = String(buildingAngle());
     angleOut.textContent = `${buildingAngle().toFixed(1)}\u00b0`;
     markPlaced();
   };
 
-  picker.addEventListener('change', show);
+  picker.addEventListener('change', () => {
+    selectedZone = picker.value;
+    show();
+    refreshZoneOverlay();
+  });
 
 
   unplace.addEventListener('click', () => {
@@ -685,12 +692,19 @@ function wireAreaAuthoring(mpSdk: any): void {
     diag.info(`${chosen().name}: ${span.toFixed(1)}m across.`);
     refreshZoneOverlay();
 
+    // Advance only while zones are still unplaced. Once the map is complete
+    // the picker stays where it is, because from then on every drag is a
+    // deliberate redraw of the zone you chose \u2014 moving on would be the tool
+    // second-guessing you.
+    const redrawn = chosen().name;
     const remaining = AREAS.find((area) => !isPlaced(areaState(area.id)));
     if (remaining) picker.value = remaining.id;
+    selectedZone = picker.value;
     markPlaced();
+    refreshZoneOverlay();
     status.textContent = remaining
       ? `Saved. Now drag across ${chosen().name}.`
-      : `All ${AREAS.length} zones placed.`;
+      : `${redrawn} redrawn. Pick another zone to redraw it.`;
   });
 
   show();

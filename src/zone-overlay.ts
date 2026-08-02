@@ -31,8 +31,18 @@ export class ZoneOverlayComponent {
     this.outputs.objectRoot = this.root;
   }
 
-  /** Replaces every slab with the current set of zones. */
-  rebuild(zones: { area: Area; state: AreaState }[], buildingAngle: number): void {
+  /**
+   * Replaces every slab with the current set of zones.
+   *
+   * `selected` is marked out because nineteen coloured rectangles all look
+   * alike from overhead, and redrawing the wrong one is a mistake you only
+   * notice later.
+   */
+  rebuild(
+    zones: { area: Area; state: AreaState }[],
+    buildingAngle: number,
+    selected?: string,
+  ): void {
     const THREE = this.context.three;
     if (!this.root) return;
 
@@ -64,13 +74,14 @@ export class ZoneOverlayComponent {
       const width = Math.max(0.2, Math.abs(la.x - lb.x));
       const depth = Math.max(0.2, Math.abs(la.z - lb.z));
       const hue = HUES[index % HUES.length];
+      const isSelected = area.id === selected;
 
       const slab = new THREE.Mesh(
         new THREE.PlaneGeometry(width, depth),
         new THREE.MeshBasicMaterial({
-          map: cachedLabel(THREE, area.name, hue),
+          map: cachedLabel(THREE, area.name, hue, isSelected),
           transparent: true,
-          opacity: 0.6,
+          opacity: isSelected ? 0.85 : 0.5,
           depthWrite: false,
           // Drawn over the floor rather than fighting it for depth. A slab a
           // few centimetres above a scanned floor z-fights badly, and in plan
@@ -86,7 +97,9 @@ export class ZoneOverlayComponent {
       // rather than taking the higher one keeps a slab flat when a zone spans a
       // slight change in level.
       slab.position.set((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.04, (a.z + b.z) / 2);
-      slab.renderOrder = 20;
+      // The selected zone draws last so it is never hidden under a neighbour
+      // it overlaps, which is exactly when you most need to see it.
+      slab.renderOrder = isSelected ? 21 : 20;
       this.root.add(slab);
     });
   }
@@ -101,17 +114,17 @@ export class ZoneOverlayComponent {
   }
 }
 
-function cachedLabel(THREE: any, name: string, hue: number): any {
-  const key = `${name}|${hue}`;
+function cachedLabel(THREE: any, name: string, hue: number, selected: boolean): any {
+  const key = `${name}|${hue}|${selected}`;
   const found = labels.get(key);
   if (found) return found;
-  const made = label(THREE, name, hue);
+  const made = label(THREE, name, hue, selected);
   labels.set(key, made);
   return made;
 }
 
 /** A tinted panel with the zone's name across it. */
-function label(THREE: any, name: string, hue: number): any {
+function label(THREE: any, name: string, hue: number, selected = false): any {
   const W = 512;
   const H = 256;
   const canvas = document.createElement('canvas');
@@ -121,9 +134,9 @@ function label(THREE: any, name: string, hue: number): any {
 
   ctx.fillStyle = `hsla(${hue}, 62%, 52%, 0.55)`;
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = `hsla(${hue}, 70%, 32%, 0.95)`;
-  ctx.lineWidth = 10;
-  ctx.strokeRect(5, 5, W - 10, H - 10);
+  ctx.strokeStyle = selected ? '#ffffff' : `hsla(${hue}, 70%, 32%, 0.95)`;
+  ctx.lineWidth = selected ? 20 : 10;
+  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, W - ctx.lineWidth, H - ctx.lineWidth);
 
   ctx.fillStyle = '#ffffff';
   ctx.font = `700 44px ui-sans-serif, system-ui, "Segoe UI", sans-serif`;
