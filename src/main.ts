@@ -416,8 +416,32 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
 
 // ---------------------------------------------------------------- author UI
 
+// One build, two views.
+//
+// The visitor experience is the real product and the author panel is an overlay
+// on top of it, rather than two separate modes. Built as two modes they drift:
+// something gets fixed in the one you are looking at and not the other, and the
+// difference is only found by a visitor. This way the visitor view is simply
+// this view with the tools hidden.
+function wireRoleToggle(): void {
+  const button = document.querySelector('#role-toggle') as HTMLButtonElement;
+  if (!button) return;
+
+  button.hidden = false;
+  let authoring = true;
+
+  button.addEventListener('click', () => {
+    authoring = !authoring;
+    devPanel.hidden = !authoring;
+    document.querySelector('#diag-panel')?.toggleAttribute('hidden', !authoring);
+    button.textContent = authoring ? 'Viewing as author' : 'Viewing as visitor';
+    button.setAttribute('aria-pressed', String(!authoring));
+  });
+}
+
 function enableDevTools(mpSdk: any, director: ReturnType<typeof createDirector>) {
   devPanel.hidden = false;
+  wireRoleToggle();
 
   const placement = createPlacementMode(
     mpSdk,

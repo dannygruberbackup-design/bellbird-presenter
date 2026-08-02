@@ -7,7 +7,6 @@ import {
   type ChromaKeyOptions,
 } from './chroma-key-material';
 import { ensureCameraSource, type CameraSource } from './camera-source';
-import { createTestPattern, type TestPattern } from './test-pattern';
 import { diag } from './diagnostics';
 import { RAW_TEXTURE } from './config';
 
@@ -96,7 +95,9 @@ export const DEFAULT_PRESENTER: PresenterInputs = {
   groundOffset: 0,
   mode: 'always',
   beacon: true,
-  beaconStyle: 'spin',
+  // Parked. The ring works, but the Areas menu now carries the job it was
+  // doing, and two things pointing at the same guide is one too many.
+  beaconStyle: 'off',
   beaconSpeed: 8,
   beaconTurn: 0,
   beaconTilt: 0,
@@ -319,7 +320,6 @@ export class ChromaPresenterComponent {
   private material: any;
   private texture: any;
   private camera: CameraSource | null = null;
-  private testPattern: TestPattern | null = null;
 
   private useTestPattern = false;
   private loaded = false;
@@ -380,8 +380,10 @@ export class ChromaPresenterComponent {
     mediaHost().appendChild(this.video);
 
     if (this.useTestPattern) {
-      this.testPattern = createTestPattern(this.inputs.keyColor);
-      this.texture = new THREE.CanvasTexture(this.testPattern.canvas);
+      // Nothing to show. The stand-in figure earned its place before any
+      // footage existed; a cartoon standing in the showroom is now worse than
+      // an empty spot, so an unfilled slot renders nothing at all.
+      this.texture = new THREE.CanvasTexture(document.createElement('canvas'));
 
     } else {
       this.texture = new THREE.VideoTexture(this.video);
@@ -434,7 +436,6 @@ export class ChromaPresenterComponent {
     this.outputs.objectRoot = this.root;
     this.outputs.collider = this.hit;
 
-    if (this.useTestPattern) this.testPattern!.start();
 
     diag.info(`${this.inputs.id}: built (${this.useTestPattern ? 'stand-in' : 'video'}).`);
   }
@@ -446,8 +447,6 @@ export class ChromaPresenterComponent {
   useVideo(url: string, label = 'video'): void {
     const THREE = this.context.three;
 
-    this.testPattern?.stop();
-    this.testPattern = null;
     this.useTestPattern = false;
     this.loaded = true;
 
@@ -509,7 +508,7 @@ export class ChromaPresenterComponent {
 
     const idle = this.inputs.mode === 'onApproach' && !this.playing;
 
-    this.plane.visible = !idle;
+    this.plane.visible = !idle && !this.useTestPattern;
     this.beacon.visible = this.inputs.beaconStyle !== 'off' && this.inputs.beacon && idle;
 
     if (idle) {
@@ -627,10 +626,7 @@ export class ChromaPresenterComponent {
   }
 
   replay(): void {
-    if (this.useTestPattern) {
-      this.testPattern!.start();
-      return;
-    }
+    if (this.useTestPattern) return;
     this.rewind();
     void this.play(this.video.muted);
   }
@@ -656,8 +652,6 @@ export class ChromaPresenterComponent {
   }
 
   onTick(delta = 16) {
-    if (this.testPattern?.running) this.texture.needsUpdate = true;
-
     // Only the spinning style animates. Turning the static disc would defeat
     // the point of offering it, and the height must come from the input rather
     // than a constant or the Marker height slider is overwritten every frame.
@@ -760,7 +754,6 @@ export class ChromaPresenterComponent {
   }
 
   onDestroy() {
-    this.testPattern?.stop();
     this.video.pause();
     this.video.removeAttribute('src');
     this.video.load();
@@ -805,10 +798,7 @@ export class ChromaPresenterComponent {
   }
 
   async play(muted: boolean) {
-    if (this.useTestPattern) {
-      this.testPattern!.start();
-      return;
-    }
+    if (this.useTestPattern) return;
     this.preload();
     this.video.muted = muted;
     if (this.video.currentTime < this.inputs.startAt) this.rewind();
@@ -828,10 +818,7 @@ export class ChromaPresenterComponent {
   }
 
   pause() {
-    if (this.useTestPattern) {
-      this.testPattern!.stop();
-      return;
-    }
+    if (this.useTestPattern) return;
     this.video.pause();
   }
 
@@ -850,7 +837,7 @@ export class ChromaPresenterComponent {
   }
 
   get playing(): boolean {
-    if (this.useTestPattern) return this.testPattern!.running;
+    if (this.useTestPattern) return false;
     return !this.video.paused && !this.video.ended;
   }
 
