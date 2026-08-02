@@ -184,3 +184,43 @@ export function areasAt(point: { x: number; z: number }): Area[] {
     .sort((a, b) => a.distance - b.distance)
     .map((entry) => entry.area);
 }
+
+/**
+ * Where the guide should stand to talk about a zone.
+ *
+ * Not two metres in front of the visitor, which is where she used to appear:
+ * that puts her wherever the visitor happens to be looking, sometimes with the
+ * display behind her back. She belongs *at* the thing she is describing.
+ *
+ * Among the circles near the zone, the best is the one about two metres from
+ * the visitor \u2014 close enough to talk, far enough to see her whole \u2014 with a
+ * gentle preference for standing nearer the display than they are, so she has
+ * it behind her rather than between them.
+ */
+export function bestSpotFor(
+  state: AreaState,
+  viewer: { x: number; z: number },
+  circles: { x: number; y: number; z: number }[],
+): { x: number; y: number; z: number } | null {
+  if (!isPlaced(state)) return null;
+
+  const candidates = circles.filter((c) => distanceToArea(c, state) <= aisleReach());
+  if (candidates.length === 0) return null;
+
+  let best: { x: number; y: number; z: number } | null = null;
+  let bestScore = Infinity;
+
+  for (const c of candidates) {
+    const fromViewer = Math.hypot(c.x - viewer.x, c.z - viewer.z);
+    // Standing on top of the visitor is worse than standing slightly too far.
+    if (fromViewer < 1.1) continue;
+
+    const score = Math.abs(fromViewer - 2) + distanceToArea(c, state) * 0.5;
+    if (score < bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+
+  return best;
+}

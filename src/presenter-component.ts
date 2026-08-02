@@ -49,29 +49,10 @@ export type PresenterInputs = ChromaKeyOptions & {
   // until a visitor comes within the trigger radius, which is what makes a room
   // full of stations feel like a room rather than a crowd.
   mode: 'always' | 'onApproach';
-  // What marks the spot while she is waiting.
-  //  'spin'   a 3D ring turning in the air — reads as interactive from across
-  //           a room, because nothing else in a scanned space moves
-  //  'static' a flat disc facing the viewer — quieter, better where several
-  //           stations are visible at once and motion would compete
-  //  'off'    nothing; the space looks untouched until she appears
-  beaconStyle: 'spin' | 'static' | 'off';
-  // Resting orientation in degrees. A block meant to sit against a shelf or in
-  // a corner has to be aimed by hand; a single yaw is not enough.
-  /** Ring rotations per minute. 0 stops it without changing the style. */
-  beaconSpeed: number;
-  beaconTurn: number;
-  beaconTilt: number;
-  beaconRoll: number;
-  /** Marker size in metres. */
-  beaconSize: number;
-  /** Marker height above the floor, in metres. */
-  beaconHeight: number;
   /** How close a visitor must be before she appears, in metres. */
   triggerRadius: number;
 
   /** Show a floating marker when she is not speaking. */
-  beacon: boolean;
   shadowDiameter: number;
 
   shadowOpacity: number;
@@ -94,16 +75,8 @@ export const DEFAULT_PRESENTER: PresenterInputs = {
   cropBottom: 0,
   groundOffset: 0,
   mode: 'always',
-  beacon: true,
   // Parked. The ring works, but the Areas menu now carries the job it was
   // doing, and two things pointing at the same guide is one too many.
-  beaconStyle: 'off',
-  beaconSpeed: 8,
-  beaconTurn: 0,
-  beaconTilt: 0,
-  beaconRoll: 0,
-  beaconSize: 0.34,
-  beaconHeight: 1.5,
   triggerRadius: 2.5,
   shadowDiameter: 1.65,
   shadowOpacity: 0.55,
@@ -144,134 +117,6 @@ function mediaHost(): HTMLElement {
 // The static form is a flat disc. Because both hang off the presenter's root,
 // which already yaws to face the viewer, the disc is always presented squarely
 // without any billboarding of its own.
-// A ring of Bellbird blocks, letters facing outwards.
-//
-// Colours and letters sampled from the wordmark itself rather than eyeballed:
-// the logo is a row of coloured letter blocks spelling BELLBIRD, and these are
-// its own values in its own order.
-const WORDMARK = [
-  { letter: 'B', colour: '#e20a22' },
-  { letter: 'E', colour: '#fdc30f' },
-  { letter: 'L', colour: '#693b90' },
-  { letter: 'L', colour: '#33b8f0' },
-  { letter: 'B', colour: '#a03888' },
-  { letter: 'I', colour: '#3a4290' },
-  { letter: 'R', colour: '#40a838' },
-  { letter: 'D', colour: '#e9511c' },
-];
-
-/**
- * One glazed face: a rounded inset panel with a soft sheen, then the letter.
- *
- * The rounding and the sheen are painted rather than modelled. A real bevel
- * would mean eight rounded boxes of extra geometry for something only ever seen
- * at a distance, and the eye reads a highlight along one edge as a curved
- * surface perfectly well.
- */
-function blockFace(THREE: any, colour: string, letter?: string): any {
-  const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-
-  ctx.fillStyle = colour;
-  ctx.fillRect(0, 0, size, size);
-
-  // A slightly darker rim, so each face reads as a separate glazed tile rather
-  // than the blocks melting into one another where they meet.
-  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-  ctx.lineWidth = size * 0.07;
-  ctx.strokeRect(0, 0, size, size);
-
-  // Glaze: a broad highlight from the upper left falling off to nothing.
-  const sheen = ctx.createLinearGradient(0, 0, size, size);
-  sheen.addColorStop(0, 'rgba(255,255,255,0.30)');
-  sheen.addColorStop(0.45, 'rgba(255,255,255,0.05)');
-  sheen.addColorStop(1, 'rgba(0,0,0,0.10)');
-  ctx.fillStyle = sheen;
-  ctx.fillRect(0, 0, size, size);
-
-  if (letter) {
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `700 ${size * 0.66}px ui-sans-serif, system-ui, "Segoe UI", sans-serif`;
-    ctx.textAlign = 'center';
-    // A capital sits above its own baseline, so the glyph's optical centre is
-    // not the box's centre.
-    ctx.textBaseline = 'middle';
-    ctx.fillText(letter, size / 2, size * 0.55);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.anisotropy = 4;
-  return texture;
-}
-
-
-
-function makeBeacon(THREE: any): any {
-  const group = new THREE.Object3D();
-
-  // Lights live on the ring's parent, not the ring, so they stay put while the
-  // blocks turn through them. Parented to the ring instead, every highlight
-  // would travel with its own face and the rotation would read as a still
-  // image sliding sideways.
-  //
-  // Ambient is deliberately generous: if the renderer gives the directionals
-  // nothing to work with, the blocks still show their own colours rather than
-  // going black.
-  const lights = new THREE.Object3D();
-  lights.add(new THREE.AmbientLight(0xffffff, 1.5));
-  const key = new THREE.DirectionalLight(0xffffff, 1.6);
-  key.position.set(0.6, 1, 0.8);
-  lights.add(key);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.6);
-  fill.position.set(-0.7, -0.2, -0.5);
-  lights.add(fill);
-  group.add(lights);
-
-  const ring = new THREE.Object3D();
-  ring.name = 'ring';
-  group.add(ring);
-
-  const radius = 0.5;
-  const cube = 0.26;
-  const geometry = new THREE.BoxGeometry(cube, cube, cube);
-
-  WORDMARK.forEach((entry, index) => {
-    // Phong rather than the flat basic material: a dielectric with a tight
-    // specular is what makes a surface read as glazed ceramic instead of
-    // printed card. Metalness would read as plastic or metal, so the specular
-    // stays white and the body colour does the work.
-    const surface = (map?: any) =>
-      new THREE.MeshPhongMaterial({
-        color: map ? 0xffffff : new THREE.Color(entry.colour),
-        map,
-        specular: new THREE.Color(0x8a8a8a),
-        shininess: 55,
-        // A little self-colour so a face turned away from both lights keeps
-        // its identity rather than dropping to black.
-        emissive: new THREE.Color(entry.colour),
-        emissiveIntensity: 0.18,
-      });
-
-    const plain = surface();
-    const front = surface(blockFace(THREE, entry.colour, entry.letter));
-
-    // Face order is +X, -X, +Y, -Y, +Z, -Z: the letter goes on +Z.
-    const block = new THREE.Mesh(geometry, [plain, plain, plain, plain, front, plain]);
-
-    const angle = (index / WORDMARK.length) * Math.PI * 2;
-    block.position.set(Math.sin(angle) * radius, 0, Math.cos(angle) * radius);
-    // Turning each block to match its own angle points its lettered face
-    // radially outward, so the ring reads as the wordmark from any side.
-    block.rotation.y = angle;
-
-    ring.add(block);
-  });
-
-  group.renderOrder = 11;
-  return group;
-}
 
 
 
@@ -313,9 +158,7 @@ export class ChromaPresenterComponent {
 
   private root: any;
   private plane: any;
-  private beacon: any;
   private hit: any;
-  private spin = 0;
   private shadow: any;
   private material: any;
   private texture: any;
@@ -417,9 +260,6 @@ export class ChromaPresenterComponent {
     this.root.add(this.shadow);
     this.applyShadow();
 
-    this.beacon = makeBeacon(THREE);
-    this.root.add(this.beacon);
-    this.applyBeacon();
 
     // A dedicated hit target, resized to whatever is currently on show. The
     // video plane cannot do this job: at 16:9 it is a metre of invisible screen
@@ -504,20 +344,17 @@ export class ChromaPresenterComponent {
 
   // Which of the two things is on show, and how big the tap target therefore is.
   private applyMode(): void {
-    if (!this.plane || !this.beacon || !this.hit) return;
+    if (!this.plane || !this.hit) return;
 
     const idle = this.inputs.mode === 'onApproach' && !this.playing;
 
     this.plane.visible = !idle && !this.useTestPattern;
-    this.beacon.visible = this.inputs.beaconStyle !== 'off' && this.inputs.beacon && idle;
 
     if (idle) {
-      // Sized and placed from the marker itself. Hard-coding 1.5m meant that
-      // moving the marker left its tap target behind, so tapping the block did
-      // nothing — which reads as the marker being decorative.
-      const reach = Math.max(0.6, this.inputs.beaconSize * 1.6);
-      this.hit.scale.set(reach, reach, 1);
-      this.hit.position.y = this.inputs.beaconHeight;
+      // Nothing is drawn while she waits, but the spot still has to be
+      // tappable: a visitor who walks up should be able to ask for her.
+      this.hit.scale.set(0.8, 1.9, 1);
+      this.hit.position.y = 0.95;
     } else {
       const g = this.plane.geometry.parameters ?? { width: 1, height: 2 };
       this.hit.scale.set(g.width, g.height, 1);
@@ -530,56 +367,11 @@ export class ChromaPresenterComponent {
     this.applyMode();
   }
 
-  setBeacon(on: boolean): void {
-    this.inputs.beacon = on;
-    this.applyMode();
-  }
-
-  /** Size in metres, height above the floor in metres. */
-  setBeaconShape(size: number, height: number): void {
-    this.inputs.beaconSize = Math.max(0.05, size);
-    this.inputs.beaconHeight = height;
-    this.applyBeacon();
-  }
-
   /** Resting orientation in degrees, so the block can sit against anything. */
-  setBeaconAngles(turn: number, tilt: number, roll: number): void {
-    this.inputs.beaconTurn = turn;
-    this.inputs.beaconTilt = tilt;
-    this.inputs.beaconRoll = roll;
-    this.applyBeacon();
-  }
-
-  setBeaconStyle(style: 'spin' | 'static' | 'off'): void {
-    this.inputs.beaconStyle = style;
-    this.applyBeacon();
-    this.applyMode();
-  }
-
   /** How close a visitor must come before she appears. */
   /** Ring rotations per minute. */
-  setBeaconSpeed(rpm: number): void {
-    this.inputs.beaconSpeed = rpm;
-  }
-
   setTriggerRadius(metres: number): void {
     this.inputs.triggerRadius = Math.max(0.5, metres);
-  }
-
-  private applyBeacon(): void {
-    if (!this.beacon) return;
-    const { beaconSize, beaconHeight } = this.inputs;
-
-    this.beacon.scale.set(beaconSize, beaconSize, beaconSize);
-    this.beacon.position.y = beaconHeight;
-
-    const rad = Math.PI / 180;
-    this.beacon.rotation.set(
-      this.inputs.beaconTilt * rad,
-      this.inputs.beaconTurn * rad,
-      this.inputs.beaconRoll * rad,
-    );
-
   }
 
   setBrightness(value: number): void {
@@ -651,19 +443,10 @@ export class ChromaPresenterComponent {
     this.video.loop = this.inputs.loop;
   }
 
-  onTick(delta = 16) {
+  onTick() {
     // Only the spinning style animates. Turning the static disc would defeat
     // the point of offering it, and the height must come from the input rather
     // than a constant or the Marker height slider is overwritten every frame.
-    if (this.beacon?.visible && this.inputs.beaconStyle === 'spin') {
-      // rpm to radians per millisecond.
-      // Negative: a positive yaw turns anticlockwise seen from above, and a
-      // marker that unwinds itself reads as running backwards.
-      this.spin -= delta * this.inputs.beaconSpeed * ((Math.PI * 2) / 60000);
-      this.beacon.rotation.y = this.inputs.beaconTurn * (Math.PI / 180) + this.spin;
-      this.beacon.position.y =
-        this.inputs.beaconHeight + Math.sin(this.spin * 1.6) * 0.04;
-    }
 
     if (this.inputs.mode === 'onApproach') this.applyMode();
     if (!this.inputs.billboard || !this.root?.visible) return;
@@ -761,22 +544,6 @@ export class ChromaPresenterComponent {
     this.texture?.dispose();
     this.material?.dispose();
     this.plane?.geometry?.dispose();
-    // The beacon is a group of meshes with shared geometry and per-face
-    // materials, so it has to be walked. Reaching for .geometry on the group
-    // itself — which is what this did while it was one mesh — throws.
-    this.beacon?.traverse((node: any) => {
-      node.geometry?.dispose?.();
-      const material = node.material;
-      if (Array.isArray(material)) {
-        for (const one of material) {
-          one.map?.dispose?.();
-          one.dispose?.();
-        }
-      } else {
-        material?.map?.dispose?.();
-        material?.dispose?.();
-      }
-    });
     if (this.shadow) {
       this.shadow.geometry.dispose();
       this.shadow.material.map?.dispose();

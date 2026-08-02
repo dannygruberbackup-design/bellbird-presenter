@@ -37,13 +37,6 @@ export type PresenterSettings = {
   groundOffset?: number;
   brightness?: number;
   mode?: 'always' | 'onApproach';
-  beaconStyle?: 'spin' | 'static' | 'off';
-  beaconSize?: number;
-  beaconHeight?: number;
-  beaconSpeed?: number;
-  beaconTurn?: number;
-  beaconTilt?: number;
-  beaconRoll?: number;
   triggerRadius?: number;
   visible?: boolean;
 };

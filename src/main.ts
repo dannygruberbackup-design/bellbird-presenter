@@ -26,6 +26,7 @@ import {
   saveArea,
   placedAreas,
   isPlaced,
+  bestSpotFor,
   buildingAngle,
   setBuildingAngle,
   aisleReach,
@@ -189,18 +190,6 @@ function applySavedSettings() {
     if (saved.visible !== undefined) handle.component.setVisible(saved.visible);
     if (saved.brightness !== undefined) handle.component.setBrightness(saved.brightness);
     if (saved.mode) handle.component.setMode(saved.mode);
-    if (saved.beaconStyle) handle.component.setBeaconStyle(saved.beaconStyle);
-    if (saved.beaconSize !== undefined || saved.beaconHeight !== undefined) {
-      handle.component.setBeaconShape(saved.beaconSize ?? 0.34, saved.beaconHeight ?? 1.5);
-    }
-    if (saved.beaconSpeed !== undefined) handle.component.setBeaconSpeed(saved.beaconSpeed);
-    if (saved.beaconTurn !== undefined || saved.beaconTilt !== undefined || saved.beaconRoll !== undefined) {
-      handle.component.setBeaconAngles(
-        saved.beaconTurn ?? 0,
-        saved.beaconTilt ?? 0,
-        saved.beaconRoll ?? 0,
-      );
-    }
     if (saved.triggerRadius !== undefined) {
       handle.component.setTriggerRadius(saved.triggerRadius);
     }
@@ -308,7 +297,7 @@ function wireControls(
   startPanel.hidden = false;
 }
 
-// The menu, the walkthrough and the beacons are three doors into the same list
+// The menu, the walkthrough and proximity are three doors into the same list
 // of stations. Built fresh each time it opens, because a guide can be placed or
 // hidden at any moment and a stale menu that sends someone nowhere is worse
 // than no menu.
@@ -346,7 +335,7 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       { handle: handles[0], label: area.name },
       async () => {
         await useAreaClip(area);
-        summon(director, mpSdk);
+        placeAtZone(area, director, mpSdk);
       },
       centre,
     );
@@ -371,7 +360,10 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       play.setAttribute('aria-label', play.title);
       play.addEventListener('click', () => void call(area));
 
-      li.append(go, play);
+      // A zone with no recording gets no play button at all. A button that
+      // does nothing teaches a visitor to stop trusting the buttons.
+      li.append(go);
+      if (areaState(area.id).hasVideo) li.append(play);
       list.appendChild(li);
       return { area, li, play };
     });
@@ -417,6 +409,36 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
     }
     diag.info('Walkthrough finished.');
   });
+}
+
+/**
+ * Stands the guide at the display, then turns the visitor to face her.
+ *
+ * Falls back to appearing in front of the visitor when the zone has no circle
+ * of its own within reach \u2014 better a guide slightly out of place than a play
+ * button that silently does nothing.
+ */
+function placeAtZone(area: Area, director: ReturnType<typeof createDirector>, mpSdk: any): void {
+  const handle = handles[0];
+  const from = handle?.component.viewerPosition();
+  const spot = from ? bestSpotFor(areaState(area.id), from, allSweeps()) : null;
+
+  if (!spot || !from) {
+    summon(director, mpSdk);
+    return;
+  }
+
+  const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
+  const target = { x: spot.x, y: spot.y - floorOffset, z: spot.z };
+
+  handle.component.setVisible(true);
+  handle.setPosition(target);
+  saveFor(handle.id, { position: target, visible: true });
+
+  void lookAt(mpSdk, target, from);
+  director.unmute();
+  director.replay(handle.id);
+  diag.info(`${area.name}: guide placed at the display.`);
 }
 
 /**
@@ -508,9 +530,9 @@ function wireAreaAuthoring(mpSdk: any): void {
     for (const option of Array.from(picker.options)) {
       const area = AREAS.find((a) => a.id === option.value);
       if (!area) continue;
-      option.textContent = isPlaced(areaState(area.id))
-        ? `\u2713 ${area.name}`
-        : area.name;
+      const state = areaState(area.id);
+      const marks = `${isPlaced(state) ? '\u2713' : '\u00b7'}${state.hasVideo ? '\u25b6' : ''}`;
+      option.textContent = `${marks} ${area.name}`;
     }
   };
 
@@ -779,7 +801,6 @@ async function enableDevTools(mpSdk: any, director: ReturnType<typeof createDire
   wirePanelCollapse();
   wirePlacementButtons(placement, onMoved);
   wirePresenterControls(refresh);
-  wireMarkerControls(refresh);
   wireFramingControls();
   wireShadowControls();
   wireSpaceControls();
@@ -904,32 +925,11 @@ function syncControlsToSelection() {
   mode.textContent = onApproach ? 'Appears on approach' : 'Always visible';
   mode.setAttribute('aria-pressed', String(onApproach));
 
-  setSlider('#beacon-size', '#beacon-size-value', saved.beaconSize ?? 0.34,
-    (v) => `${v.toFixed(2)} m`,
-  );
-  setSlider('#beacon-height', '#beacon-height-value', saved.beaconHeight ?? 1.5,
-    (v) => `${v.toFixed(2)} m`,
-  );
-  const deg = (v: number) => `${Math.round(v)}°`;
-  setSlider('#beacon-speed', '#beacon-speed-value', saved.beaconSpeed ?? 8,
-    (v) => `${v.toFixed(1)} rpm`,
-  );
-  setSlider('#beacon-turn', '#beacon-turn-value', saved.beaconTurn ?? 0, deg);
-  setSlider('#beacon-tilt', '#beacon-tilt-value', saved.beaconTilt ?? 0, deg);
-  setSlider('#beacon-roll', '#beacon-roll-value', saved.beaconRoll ?? 0, deg);
   setSlider('#trigger-radius', '#trigger-radius-value', saved.triggerRadius ?? 2.5,
     (v) => `${v.toFixed(1)} m`,
   );
 
 
-  const beaconButton = document.querySelector('#beacon-style') as HTMLButtonElement;
-  const style = saved.beaconStyle ?? 'spin';
-  beaconButton.textContent =
-    style === 'spin'
-      ? 'Marker: turning ring'
-      : style === 'static'
-        ? 'Marker: still ring'
-        : 'Marker: off';
 
   const facing = document.querySelector('#facing') as HTMLButtonElement;
   const full = saved.billboardMode === 'full';
@@ -1099,63 +1099,6 @@ function wirePresenterControls(refresh: () => void) {
 
 // Marker style cycles rather than offering three buttons: the panel is already
 // dense on a tablet, and the three states are mutually exclusive.
-const BEACON_STYLES = ['spin', 'static', 'off'] as const;
-
-function wireMarkerControls(refresh: () => void) {
-  const button = document.querySelector('#beacon-style') as HTMLButtonElement;
-
-  button.addEventListener('click', () => {
-    const handle = current();
-    if (!handle) return;
-    const now = handle.component.inputs.beaconStyle;
-    const next = BEACON_STYLES[(BEACON_STYLES.indexOf(now) + 1) % BEACON_STYLES.length];
-    handle.component.setBeaconStyle(next);
-    saveFor(handle.id, { beaconStyle: next });
-    refresh();
-  });
-
-  const applyShape = () => {
-    const handle = current();
-    if (!handle) return;
-    const size = Number((document.querySelector('#beacon-size') as HTMLInputElement).value);
-    const height = Number((document.querySelector('#beacon-height') as HTMLInputElement).value);
-    handle.component.setBeaconShape(size, height);
-    saveFor(handle.id, { beaconSize: size, beaconHeight: height });
-  };
-
-  onSlider('#beacon-size', '#beacon-size-value', (v) => `${v.toFixed(2)} m`, applyShape);
-  onSlider('#beacon-height', '#beacon-height-value', (v) => `${v.toFixed(2)} m`, applyShape);
-
-  const applyAngles = () => {
-    const handle = current();
-    if (!handle) return;
-    const n = (id: string) => Number((document.querySelector(id) as HTMLInputElement).value);
-    const turn = n('#beacon-turn');
-    const tilt = n('#beacon-tilt');
-    const roll = n('#beacon-roll');
-    handle.component.setBeaconAngles(turn, tilt, roll);
-    saveFor(handle.id, { beaconTurn: turn, beaconTilt: tilt, beaconRoll: roll });
-  };
-
-  onSlider('#beacon-speed', '#beacon-speed-value', (v) => `${v.toFixed(1)} rpm`, (v) => {
-    const handle = current();
-    if (!handle) return;
-    handle.component.setBeaconSpeed(v);
-    saveFor(handle.id, { beaconSpeed: v });
-  });
-
-  const degrees = (v: number) => `${Math.round(v)}°`;
-  onSlider('#beacon-turn', '#beacon-turn-value', degrees, applyAngles);
-  onSlider('#beacon-tilt', '#beacon-tilt-value', degrees, applyAngles);
-  onSlider('#beacon-roll', '#beacon-roll-value', degrees, applyAngles);
-
-  onSlider('#trigger-radius', '#trigger-radius-value', (v) => `${v.toFixed(1)} m`, (v) => {
-    const handle = current();
-    if (!handle) return;
-    handle.component.setTriggerRadius(v);
-    saveFor(handle.id, { triggerRadius: v });
-  });
-}
 
 function wireFramingControls() {
   const apply = () => {
