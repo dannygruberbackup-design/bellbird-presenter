@@ -5,7 +5,6 @@ import '@matterport/webcomponent';
 import './ui.css';
 
 import { spawnPresenters, spawnZoneOverlay, type PresenterHandle } from './scene';
-import { MODEL_PROBE_COMPONENT, modelProbeFactory } from './model-probe';
 import { createDirector } from './presenter-director';
 import { createCaptionController } from './captions';
 import { createPlacementMode } from './placement';
@@ -745,6 +744,7 @@ function wireAreaAuthoring(mpSdk: any): void {
   // to resolve. OBJ still works when properly hosted; it just cannot be dropped
   // in from a phone.
   let modelObject: any = null;
+  let modelLoader: any = null;
   let modelUrl: string | null = null;
 
   const modelStatus = document.querySelector('#model-status') as HTMLElement;
@@ -795,20 +795,6 @@ function wireAreaAuthoring(mpSdk: any): void {
       const [object] = await mpSdk.Scene.createObjects(1);
       const node = object.addNode();
 
-      // The probe first, so something is visible even if the loader does
-      // nothing at all. If the wireframe appears and the model does not, the
-      // node is in the right place and the loader is the fault.
-      try {
-        if (typeof mpSdk.Scene.registerComponents === 'function') {
-          await mpSdk.Scene.registerComponents([
-            { name: MODEL_PROBE_COMPONENT, factory: modelProbeFactory },
-          ]);
-        }
-        node.addComponent(MODEL_PROBE_COMPONENT, { size: 1 });
-      } catch {
-        // Already registered by an earlier placement; harmless.
-      }
-
       // Position through the component's own input rather than by reaching into
       // obj3D. The loader builds its subtree when it finishes loading, well
       // after the node was positioned, and it positions that subtree from
@@ -816,12 +802,12 @@ function wireAreaAuthoring(mpSdk: any): void {
       // the default of {0,0,0} the moment the model arrives. That alone puts
       // the model at the world origin, which in this space is off in a corner.
       const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
-      const loader = node.addComponent('mp.gltfLoader', {
+      const loader = (modelLoader = node.addComponent('mp.gltfLoader', {
         url: modelUrl,
         localPosition: { x: from.x, y: from.y - floorOffset, z: from.z },
         localScale: { x: 1, y: 1, z: 1 },
         visible: true,
-      });
+      }));
 
       node.addComponent('mp.lights');
       object.start();
@@ -850,8 +836,18 @@ function wireAreaAuthoring(mpSdk: any): void {
   });
 
   document.querySelector('#model-clear')?.addEventListener('click', () => {
+    // Hide first, then stop. stop() ends the components, but the subtree the
+    // loader built belongs to the loader and does not reliably go with them -
+    // and a model that is still on screen after Remove is worse than one that
+    // never appeared, because now you doubt the button.
+    try {
+      if (modelLoader?.inputs) modelLoader.inputs.visible = false;
+    } catch {
+      /* the component may already be gone */
+    }
     modelObject?.stop?.();
     modelObject = null;
+    modelLoader = null;
     modelStatus.textContent = modelUrl ? 'Removed. Place again to re-add.' : 'No model loaded.';
   });
 
