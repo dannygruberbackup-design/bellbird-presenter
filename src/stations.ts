@@ -49,10 +49,21 @@ export async function goToStation(
   const circle = nearestSweep(position, 6);
 
   if (circle?.sid && mpSdk?.Sweep?.moveTo) {
+    // The transition is an enum, not the bare word. Matterport's values look
+    // like 'transition.fly', and passing 'fly' throws — which the old catch
+    // reported as a travel failure without ever saying why.
+    const transition = mpSdk?.Sweep?.Transition?.FLY ?? 'transition.fly';
     try {
-      await mpSdk.Sweep.moveTo(circle.sid, { transition: 'fly', transitionTime: 1400 });
-    } catch {
-      diag.warn(`No travel to ${station.label}.`);
+      await mpSdk.Sweep.moveTo(circle.sid, { transition, transitionTime: 1400 });
+    } catch (error) {
+      // Second attempt with no options at all: an unfamiliar option is a far
+      // more likely fault than the sweep itself being unreachable.
+      try {
+        await mpSdk.Sweep.moveTo(circle.sid);
+      } catch (plain) {
+        diag.warn(`No travel to ${station.label}: ${String(plain)}`);
+      }
+      void error;
     }
   } else {
     diag.warn(`No circle near ${station.label}.`);

@@ -308,9 +308,8 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   if (!panel || !toggle || !list) return;
 
   let rows: { area: Area; li: HTMLElement; play: HTMLButtonElement }[] = [];
-  let expanded = false;
-  const empty = document.querySelector('#station-empty') as HTMLElement;
-  const expand = document.querySelector('#station-expand') as HTMLButtonElement;
+  const hereNow = document.querySelector('#here-now') as HTMLElement;
+  const ambient = new Map<string, HTMLElement>();
 
   const close = () => {
     panel.hidden = true;
@@ -369,6 +368,7 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   // Built once, then only its classes change. Rebuilding the list on every
   // repaint would restart the transitions four times a second, so nothing would
   // ever finish easing in.
+  // The full list, built once and only re-marked afterwards.
   const build = () => {
     if (rows.length) return;
     list.textContent = '';
@@ -389,61 +389,96 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       play.textContent = '\u25b6';
       play.title = `Bring the guide to ${area.name}`;
       play.setAttribute('aria-label', play.title);
+      play.disabled = areaState(area.id).hasVideo !== true;
       play.addEventListener('click', () => void call(area));
 
       li.append(go, play);
       list.appendChild(li);
       return { area, li, play };
     });
-    paint();
   };
 
-  /** Lights the zones you are standing in and readies their guides. */
-  const paint = () => {
-    const from = handles[0]?.component.viewerPosition();
-    const here = from ? areasAt(from).map((a) => a.id) : [];
+  /**
+   * The ambient view: the zones you are in, as text at the edge of the screen.
+   *
+   * Rows are added and removed rather than shown and hidden, so a zone you walk
+   * out of eases away and its replacement eases in behind it. Kept between
+   * repaints by id, because rebuilding the lot four times a second would mean
+   * nothing ever finished fading.
+   */
+  const showHere = (here: Area[]) => {
+    const wanted = new Set(here.map((a) => a.id));
 
-    for (const row of rows) {
-      const inside = here.includes(row.area.id);
-      row.li.classList.toggle('here', inside);
-
-      // Shown always, dimmed unless there is a clip. A button that is simply
-      // absent leaves you wondering whether you missed it; one that is visibly
-      // unavailable tells you the zone has no guide yet.
-      const ready = areaState(row.area.id).hasVideo === true;
-      row.play.disabled = !ready;
-      row.play.classList.toggle('ready', ready && inside);
+    for (const [id, line] of ambient) {
+      if (wanted.has(id)) continue;
+      ambient.delete(id);
+      line.classList.remove('show');
+      // Removed only once the fade has run; taking it out immediately would
+      // make it vanish rather than leave.
+      window.setTimeout(() => line.remove(), 450);
     }
 
-    const showing = expanded || here.length > 0;
-    empty.hidden = showing;
+    here.forEach((area, index) => {
+      let line = ambient.get(area.id);
+      if (!line) {
+        line = document.createElement('div');
+        line.className = 'line';
+
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = area.name;
+
+        const play = document.createElement('button');
+        play.type = 'button';
+        play.className = 'play';
+        play.textContent = '\u25b6';
+        play.title = `Bring the guide to ${area.name}`;
+        play.setAttribute('aria-label', play.title);
+        play.disabled = areaState(area.id).hasVideo !== true;
+        play.addEventListener('click', () => void call(area));
+
+        line.append(name, play);
+        hereNow.appendChild(line);
+        ambient.set(area.id, line);
+
+        // A frame's delay so the browser has the starting state to animate from.
+        requestAnimationFrame(() => line!.classList.add('show'));
+      }
+      line.style.order = String(index);
+    });
   };
 
-  // Repainted whether or not the menu is open: the Areas button itself is the
-  // ambient answer to "where am I", and this timer was lost in the rewrite that
-  // split building the list from painting it.
-  window.setInterval(() => {
-    if (!panel.hidden) paint();
-
+  /** Marks the zones you are in within the full list. */
+  const paint = () => {
     const from = handles[0]?.component.viewerPosition();
-    const nearest = from ? areasAt(from)[0] : null;
-    toggle.textContent = nearest ? nearest.name : 'Areas';
-    toggle.classList.toggle('here', Boolean(nearest));
-  }, 250);
+    const here = from ? areasAt(from) : [];
+    const ids = here.map((a) => a.id);
 
-  expand?.addEventListener('click', () => {
-    expanded = !expanded;
-    panel.classList.toggle('expanded', expanded);
-    expand.setAttribute('aria-expanded', String(expanded));
-    expand.textContent = expanded ? 'Nearby only' : 'All areas';
-    paint();
-  });
+    for (const row of rows) {
+      row.li.classList.toggle('here', ids.includes(row.area.id));
+      row.play.classList.toggle('ready', ids.includes(row.area.id));
+    }
+
+    // The ambient view stands down while the full list is open: two answers to
+    // the same question, one over the top of the other, is just noise.
+    hereNow.hidden = !panel.hidden;
+    if (panel.hidden) showHere(here);
+    else showHere([]);
+
+    toggle.textContent = here[0]?.name ?? 'Areas';
+    toggle.classList.toggle('here', here.length > 0);
+  };
+
+  // Always running: the ambient view is the default state of the interface, not
+  // something the menu switches on.
+  window.setInterval(paint, 250);
 
   toggle.addEventListener('click', () => {
     const opening = panel.hidden;
     if (opening) build();
     panel.hidden = !opening;
     toggle.setAttribute('aria-expanded', String(opening));
+    paint();
   });
 
   walkButton?.addEventListener('click', async () => {
