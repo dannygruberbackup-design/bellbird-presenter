@@ -48,25 +48,33 @@ export const AREAS: Area[] = [
   { id: 'sleep', name: 'Sleep Space' },
 ];
 
+export type Point = { x: number; y: number; z: number };
+
 export type AreaState = {
-  /** Where to send a visitor who picks this area. Unset until you place it. */
-  position?: { x: number; y: number; z: number };
-  /** How far the area reaches from that spot, in metres. */
-  radius?: number;
-  /** True once a clip has been stored for this area. */
+  /** Opposite corners of the zone, in world space. Both needed to be placed. */
+  cornerA?: Point;
+  cornerB?: Point;
+  /** True once a clip has been stored for this zone. */
   hasVideo?: boolean;
 };
 
-const KEY = 'presenter.areas.v1';
+type Stored = {
+  byArea: Record<AreaId, AreaState>;
+  /** How far the building is turned from Matterport's world axes, in degrees. */
+  buildingAngle?: number;
+};
 
-let cache: Record<AreaId, AreaState> = read();
+const KEY = 'presenter.areas.v2';
 
-function read(): Record<AreaId, AreaState> {
+let cache: Stored = read();
+
+function read(): Stored {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Record<AreaId, AreaState>) : {};
+    const parsed = raw ? (JSON.parse(raw) as Stored) : null;
+    return parsed?.byArea ? parsed : { byArea: {} };
   } catch {
-    return {};
+    return { byArea: {} };
   }
 }
 
@@ -79,51 +87,77 @@ function persist(): void {
 }
 
 export function areaState(id: AreaId): AreaState {
-  return cache[id] ?? {};
+  return cache.byArea[id] ?? {};
 }
 
 export function saveArea(id: AreaId, patch: AreaState): void {
-  cache[id] = { ...(cache[id] ?? {}), ...patch };
+  cache.byArea[id] = { ...(cache.byArea[id] ?? {}), ...patch };
+  persist();
+}
+
+export function buildingAngle(): number {
+  return cache.buildingAngle ?? 0;
+}
+
+export function setBuildingAngle(degrees: number): void {
+  cache.buildingAngle = degrees;
   persist();
 }
 
 export function clearAreas(): void {
-  cache = {};
+  cache = { byArea: {} };
   persist();
 }
 
-/** The default reach of an area, in metres, before you tune it. */
-export const DEFAULT_AREA_RADIUS = 3;
+/** A zone is placed once both its corners are known. */
+export function isPlaced(state: AreaState): boolean {
+  return Boolean(state.cornerA && state.cornerB);
+}
 
 /** Areas you have actually placed. The rest are not somewhere to send anyone. */
 export function placedAreas(): { area: Area; state: AreaState }[] {
-  return AREAS.map((area) => ({ area, state: areaState(area.id) })).filter(
-    (entry) => entry.state.position,
+  return AREAS.map((area) => ({ area, state: areaState(area.id) })).filter((entry) =>
+    isPlaced(entry.state),
   );
 }
 
+/** Rotates a floor point into the building's own frame. */
+function intoBuildingFrame(p: { x: number; z: number }): { x: number; z: number } {
+  const t = (-buildingAngle() * Math.PI) / 180;
+  const cos = Math.cos(t);
+  const sin = Math.sin(t);
+  return { x: p.x * cos - p.z * sin, z: p.x * sin + p.z * cos };
+}
+
+/** The middle of a zone, in world space \u2014 where a visitor is sent. */
+export function areaCentre(state: AreaState): Point | null {
+  if (!isPlaced(state)) return null;
+  const a = state.cornerA!;
+  const b = state.cornerB!;
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+}
+
 /**
- * The area a point falls inside, or null.
+ * Every zone a point falls inside \u2014 plural, deliberately.
  *
- * Nearest wins where zones overlap, which they do on the plan: Sensory Tiles
- * runs along the edge of Literacy, and Pollination sits inside the STEM end of
- * the room. Picking the nearest centre is not a perfect reading of the map, but
- * it is a predictable one \u2014 and predictable beats clever when a visitor is
- * trying to work out where they are.
+ * The plan nests zones: Pollination Station sits inside the STEM end of the
+ * room, Sensory Tiles runs along the edge of Literacy. Picking one winner would
+ * be the app guessing which one the visitor meant. Reporting all of them and
+ * letting the visitor choose is honest, and it is what the map actually says.
  */
-export function areaAt(point: { x: number; z: number }): Area | null {
-  let best: Area | null = null;
-  let bestDistance = Infinity;
+export function areasAt(point: { x: number; z: number }): Area[] {
+  const here = intoBuildingFrame(point);
 
-  for (const { area, state } of placedAreas()) {
-    const p = state.position!;
-    const distance = Math.hypot(p.x - point.x, p.z - point.z);
-    if (distance > (state.radius ?? DEFAULT_AREA_RADIUS)) continue;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = area;
-    }
-  }
-
-  return best;
+  return placedAreas()
+    .filter(({ state }) => {
+      const a = intoBuildingFrame(state.cornerA!);
+      const b = intoBuildingFrame(state.cornerB!);
+      return (
+        here.x >= Math.min(a.x, b.x) &&
+        here.x <= Math.max(a.x, b.x) &&
+        here.z >= Math.min(a.z, b.z) &&
+        here.z <= Math.max(a.z, b.z)
+      );
+    })
+    .map(({ area }) => area);
 }

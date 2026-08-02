@@ -17,11 +17,14 @@ import { subscribeSweeps, nearestSweep } from './sweeps';
 import { goToStation, lookAt } from './stations';
 import {
   AREAS,
-  areaAt,
+  areasAt,
   areaState,
+  areaCentre,
   saveArea,
   placedAreas,
-  DEFAULT_AREA_RADIUS,
+  isPlaced,
+  buildingAngle,
+  setBuildingAngle,
   type Area,
 } from './areas';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
@@ -319,10 +322,10 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   };
 
   const travel = async (area: Area) => {
-    const state = areaState(area.id);
-    if (!state.position) return;
+    const centre = areaCentre(areaState(area.id));
+    if (!centre) return;
     close();
-    await goToStation(mpSdk, { handle: handles[0], label: area.name }, () => {}, state.position);
+    await goToStation(mpSdk, { handle: handles[0], label: area.name }, () => {}, centre);
   };
 
   // Travel then speak, in one tap. The two-step is still there for anyone
@@ -330,8 +333,8 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   // someone who already knows what they want should not have to tap twice for
   // the same outcome.
   const call = async (area: Area) => {
-    const state = areaState(area.id);
-    if (!state.position) return;
+    const centre = areaCentre(areaState(area.id));
+    if (!centre) return;
     close();
     await goToStation(
       mpSdk,
@@ -340,7 +343,7 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
         await useAreaClip(area);
         summon(director, mpSdk);
       },
-      state.position,
+      centre,
     );
   };
 
@@ -373,9 +376,12 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   /** Lights the zone the visitor is standing in and readies its guide. */
   const paint = () => {
     const from = handles[0]?.component.viewerPosition();
-    const here = from ? areaAt(from) : null;
+    // Plural: nested zones both report, and the visitor decides which they
+    // meant. Standing at the pollination table you are in Pollination Station
+    // and in STEM, and the menu should say so rather than pick for you.
+    const here = from ? areasAt(from).map((a) => a.id) : [];
     for (const row of rows) {
-      const inside = here?.id === row.area.id;
+      const inside = here.includes(row.area.id);
       row.li.classList.toggle('here', inside);
       // Dimmed rather than disabled when you are elsewhere: it still works, so
       // the decided visitor gets one tap, while the styling says plainly that
@@ -465,13 +471,14 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
 // visitor can be sent.
 function wireAreaAuthoring(): void {
   const picker = document.querySelector('#area-pick') as HTMLSelectElement;
-  const place = document.querySelector('#area-place') as HTMLButtonElement;
+  const cornerA = document.querySelector('#area-corner-a') as HTMLButtonElement;
+  const cornerB = document.querySelector('#area-corner-b') as HTMLButtonElement;
   const unplace = document.querySelector('#area-clear') as HTMLButtonElement;
-  const radius = document.querySelector('#area-radius') as HTMLInputElement;
-  const radiusOut = document.querySelector('#area-radius-value') as HTMLOutputElement;
+  const angle = document.querySelector('#building-angle') as HTMLInputElement;
+  const angleOut = document.querySelector('#building-angle-value') as HTMLOutputElement;
   const status = document.querySelector('#area-status') as HTMLElement;
   const assign = document.querySelector('#area-video') as HTMLButtonElement;
-  if (!picker || !place) return;
+  if (!picker || !cornerA) return;
 
   for (const area of AREAS) {
     const option = document.createElement('option');
@@ -480,51 +487,61 @@ function wireAreaAuthoring(): void {
     picker.appendChild(option);
   }
 
-  const current = () => AREAS.find((a) => a.id === picker.value) ?? AREAS[0];
+  const chosen = () => AREAS.find((a) => a.id === picker.value) ?? AREAS[0];
 
   const show = () => {
-    const area = current();
-    const state = areaState(area.id);
-    const reach = state.radius ?? DEFAULT_AREA_RADIUS;
-    radius.value = String(reach);
-    radiusOut.textContent = `${reach.toFixed(1)} m`;
-    status.textContent = state.position
-      ? `Placed. ${placedAreas().length} of ${AREAS.length} zones set.`
-      : `Not placed. ${placedAreas().length} of ${AREAS.length} zones set.`;
+    const state = areaState(chosen().id);
+    const done = placedAreas().length;
+    const corners = `${state.cornerA ? 'A' : '\u2013'}${state.cornerB ? 'B' : '\u2013'}`;
+    status.textContent = isPlaced(state)
+      ? `Placed (${corners}). ${done} of ${AREAS.length} zones set.`
+      : `Corners ${corners}. ${done} of ${AREAS.length} zones set.`;
+    angle.value = String(buildingAngle());
+    angleOut.textContent = `${buildingAngle().toFixed(1)}\u00b0`;
   };
 
   picker.addEventListener('change', show);
 
-  place.addEventListener('click', () => {
+  // Corners are captured by standing on them, snapped to the circle underfoot.
+  // Tapping them on the floor from across the room sounds quicker and is not:
+  // a tap at a glancing angle lands well away from where it looks, and a zone
+  // corner that is not somewhere a visitor can stand is a corner you cannot
+  // check by walking to it.
+  const capture = (which: 'cornerA' | 'cornerB') => {
     const from = handles[0]?.component.viewerPosition();
     if (!from) {
       diag.warn('No viewer position yet.');
       return;
     }
-    // Snap to the circle underfoot: the saved point has to be somewhere a
-    // visitor can actually stand, and that is exactly what a circle is.
     const circle = nearestSweep(from, 3);
     const point = circle ? { x: circle.x, y: circle.y, z: circle.z } : from;
-    saveArea(current().id, { position: point, radius: Number(radius.value) });
-    diag.info(`${current().name}: placed.`);
+    saveArea(chosen().id, { [which]: point });
+    diag.info(`${chosen().name}: ${which === 'cornerA' ? 'A' : 'B'} set.`);
     show();
-  });
+  };
+
+  cornerA.addEventListener('click', () => capture('cornerA'));
+  cornerB.addEventListener('click', () => capture('cornerB'));
 
   unplace.addEventListener('click', () => {
-    saveArea(current().id, { position: undefined });
-    diag.info(`${current().name}: unplaced.`);
+    saveArea(chosen().id, { cornerA: undefined, cornerB: undefined });
+    diag.info(`${chosen().name}: unplaced.`);
     show();
   });
 
-  radius.addEventListener('input', () => {
-    const reach = Number(radius.value);
-    radiusOut.textContent = `${reach.toFixed(1)} m`;
-    saveArea(current().id, { radius: reach });
+  // One angle for the whole building rather than a rotation per zone. The plan
+  // is axis-aligned to the walls; Matterport's axes are aligned to however the
+  // scan happened to start. Nineteen per-zone rotations would be nineteen
+  // chances to get the same number slightly wrong.
+  angle.addEventListener('input', () => {
+    const degrees = Number(angle.value);
+    angleOut.textContent = `${degrees.toFixed(1)}\u00b0`;
+    setBuildingAngle(degrees);
   });
 
   assign.addEventListener('click', () => {
     const input = document.querySelector('#video-file') as HTMLInputElement;
-    assigningTo = current().id;
+    assigningTo = chosen().id;
     input.click();
   });
 

@@ -60,12 +60,15 @@
           <select id="area-pick"></select>
         </label>
         <div class="actions">
-          <button id="area-place" type="button">Place here</button>
-          <button id="area-clear" type="button">Unplace</button>
+          <button id="area-corner-a" type="button">Corner A here</button>
+          <button id="area-corner-b" type="button">Corner B here</button>
         </div>
-        <label class="slider" for="area-radius">
-          <span>Zone reach <output id="area-radius-value">3.0 m</output></span>
-          <input id="area-radius" type="range" min="1" max="10" step="0.2" value="3" />
+        <div class="actions">
+          <button id="area-clear" type="button">Unplace zone</button>
+        </div>
+        <label class="slider" for="building-angle">
+          <span>Building angle <output id="building-angle-value">0&deg;</output></span>
+          <input id="building-angle" type="range" min="-180" max="180" step="0.5" value="0" />
         </label>
         <div class="actions">
           <button id="area-video" type="button">Assign clip to zone</button>
