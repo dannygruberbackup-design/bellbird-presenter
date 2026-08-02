@@ -30,7 +30,6 @@ import {
   setBuildingAngle,
   aisleReach,
   setAisleReach,
-  hasClip,
   type Area,
 } from './areas';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
