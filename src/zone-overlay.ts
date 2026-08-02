@@ -14,6 +14,11 @@ export const ZONE_OVERLAY_COMPONENT = 'zoneOverlay';
 /** Distinct hues, cycled. Nineteen named colours would be nineteen decisions. */
 const HUES = [4, 42, 96, 152, 198, 232, 268, 312];
 
+// Label textures are cached by name and hue. Rebuilding is now driven by a
+// drag, which fires many times a second; drawing nineteen canvases on every
+// move would stall the drag it is meant to preview.
+const labels = new Map<string, any>();
+
 export class ZoneOverlayComponent {
   inputs: Record<string, unknown> = {};
   outputs: { objectRoot: any } = {} as { objectRoot: any };
@@ -34,7 +39,8 @@ export class ZoneOverlayComponent {
     for (const child of [...this.root.children]) {
       this.root.remove(child);
       child.geometry?.dispose?.();
-      child.material?.map?.dispose?.();
+      // The map is deliberately not disposed: it is shared from the cache and
+      // will be handed straight back on the next rebuild.
       child.material?.dispose?.();
     }
 
@@ -62,7 +68,7 @@ export class ZoneOverlayComponent {
       const slab = new THREE.Mesh(
         new THREE.PlaneGeometry(width, depth),
         new THREE.MeshBasicMaterial({
-          map: label(THREE, area.name, hue),
+          map: cachedLabel(THREE, area.name, hue),
           transparent: true,
           opacity: 0.55,
           depthWrite: false,
@@ -82,10 +88,20 @@ export class ZoneOverlayComponent {
   onDestroy() {
     for (const child of this.root?.children ?? []) {
       child.geometry?.dispose?.();
-      child.material?.map?.dispose?.();
       child.material?.dispose?.();
     }
+    for (const texture of labels.values()) texture.dispose?.();
+    labels.clear();
   }
+}
+
+function cachedLabel(THREE: any, name: string, hue: number): any {
+  const key = `${name}|${hue}`;
+  const found = labels.get(key);
+  if (found) return found;
+  const made = label(THREE, name, hue);
+  labels.set(key, made);
+  return made;
 }
 
 /** A tinted panel with the zone's name across it. */

@@ -479,14 +479,12 @@ export function refreshZoneOverlay(): void {
 
 function wireAreaAuthoring(mpSdk: any): void {
   const picker = document.querySelector('#area-pick') as HTMLSelectElement;
-  const cornerA = document.querySelector('#area-corner-a') as HTMLButtonElement;
-  const cornerB = document.querySelector('#area-corner-b') as HTMLButtonElement;
   const unplace = document.querySelector('#area-clear') as HTMLButtonElement;
   const angle = document.querySelector('#building-angle') as HTMLInputElement;
   const angleOut = document.querySelector('#building-angle-value') as HTMLOutputElement;
   const status = document.querySelector('#area-status') as HTMLElement;
   const assign = document.querySelector('#area-video') as HTMLButtonElement;
-  if (!picker || !cornerA) return;
+  if (!picker) return;
 
   for (const area of AREAS) {
     const option = document.createElement('option');
@@ -497,6 +495,18 @@ function wireAreaAuthoring(mpSdk: any): void {
 
   const chosen = () => AREAS.find((a) => a.id === picker.value) ?? AREAS[0];
 
+  // A tick in the dropdown against every zone already mapped, so the list is
+  // its own record of what is left rather than something to hold in your head.
+  const markPlaced = () => {
+    for (const option of Array.from(picker.options)) {
+      const area = AREAS.find((a) => a.id === option.value);
+      if (!area) continue;
+      option.textContent = isPlaced(areaState(area.id))
+        ? `\u2713 ${area.name}`
+        : area.name;
+    }
+  };
+
   const show = () => {
     const state = areaState(chosen().id);
     const done = placedAreas().length;
@@ -506,31 +516,11 @@ function wireAreaAuthoring(mpSdk: any): void {
       : `Corners ${corners}. ${done} of ${AREAS.length} zones set.`;
     angle.value = String(buildingAngle());
     angleOut.textContent = `${buildingAngle().toFixed(1)}\u00b0`;
+    markPlaced();
   };
 
   picker.addEventListener('change', show);
 
-  // Corners are captured by standing on them, snapped to the circle underfoot.
-  // Tapping them on the floor from across the room sounds quicker and is not:
-  // a tap at a glancing angle lands well away from where it looks, and a zone
-  // corner that is not somewhere a visitor can stand is a corner you cannot
-  // check by walking to it.
-  const capture = (which: 'cornerA' | 'cornerB') => {
-    const from = handles[0]?.component.viewerPosition();
-    if (!from) {
-      diag.warn('No viewer position yet.');
-      return;
-    }
-    const circle = nearestSweep(from, 3);
-    const point = circle ? { x: circle.x, y: circle.y, z: circle.z } : from;
-    saveArea(chosen().id, { [which]: point });
-    diag.info(`${chosen().name}: ${which === 'cornerA' ? 'A' : 'B'} set.`);
-    show();
-    refreshZoneOverlay();
-  };
-
-  cornerA.addEventListener('click', () => capture('cornerA'));
-  cornerB.addEventListener('click', () => capture('cornerB'));
 
   unplace.addEventListener('click', () => {
     saveArea(chosen().id, { cornerA: undefined, cornerB: undefined });
@@ -564,8 +554,10 @@ function wireAreaAuthoring(mpSdk: any): void {
   // circles: a zone edge usually runs along a wall, where nobody ever stood.
   const draw = document.querySelector('#area-draw') as HTMLButtonElement;
   let drawing = false;
-  let next: 'cornerA' | 'cornerB' = 'cornerA';
+  let dragging = false;
+  let start: { x: number; y: number; z: number } | null = null;
   let hit: { position: { x: number; y: number; z: number } } | null = null;
+  let lastPreview = 0;
 
   mpSdk?.Pointer?.intersection?.subscribe?.((intersection: any) => {
     hit = intersection;
@@ -573,6 +565,8 @@ function wireAreaAuthoring(mpSdk: any): void {
 
   const setDrawing = async (on: boolean) => {
     drawing = on;
+    dragging = false;
+    start = null;
     draw.setAttribute('aria-pressed', String(on));
     draw.textContent = on ? 'Done drawing' : 'Draw on floor plan';
     document.body.classList.toggle('placement-active', on);
@@ -584,38 +578,71 @@ function wireAreaAuthoring(mpSdk: any): void {
       diag.warn('Could not switch view; draw from wherever you are.');
     }
 
-    if (on) {
-      next = 'cornerA';
-      status.textContent = `Tap corner A of ${chosen().name}.`;
-      refreshZoneOverlay();
-    } else {
-      show();
-    }
+    status.textContent = on ? `Drag across ${chosen().name}.` : '';
+    if (!on) show();
+    refreshZoneOverlay();
   };
 
   draw.addEventListener('click', () => void setDrawing(!drawing));
 
-  window.addEventListener('pointerdown', (event) => {
-    if (!drawing || !hit) return;
-    if ((event.target as HTMLElement)?.closest('[data-ui]')) return;
+  const floorPoint = () =>
+    hit ? { x: hit.position.x, y: hit.position.y, z: hit.position.z } : null;
 
-    const point = { x: hit.position.x, y: hit.position.y, z: hit.position.z };
-    saveArea(chosen().id, { [next]: point });
+  // Press, drag, release. Two taps made you do the computer's work: holding a
+  // rectangle out and watching it follow your finger is how everyone expects to
+  // draw a box, and it shows the result before you commit rather than after.
+  window.addEventListener('pointerdown', (event) => {
+    if (!drawing) return;
+    if ((event.target as HTMLElement)?.closest('[data-ui]')) return;
+    const point = floorPoint();
+    if (!point) return;
+    dragging = true;
+    start = point;
+    saveArea(chosen().id, { cornerA: point, cornerB: point });
+    refreshZoneOverlay();
+  });
+
+  window.addEventListener('pointermove', () => {
+    if (!drawing || !dragging || !start) return;
+    const point = floorPoint();
+    if (!point) return;
+    // Throttled: the overlay rebuilds every slab, and sixty times a second is
+    // far more than a hand moving across a plan needs.
+    const now = performance.now();
+    if (now - lastPreview < 60) return;
+    lastPreview = now;
+    saveArea(chosen().id, { cornerB: point });
+    refreshZoneOverlay();
+  });
+
+  window.addEventListener('pointerup', () => {
+    if (!drawing || !dragging || !start) return;
+    dragging = false;
+
+    const point = floorPoint() ?? start;
+    const span = Math.hypot(point.x - start.x, point.z - start.z);
+
+    // A stray tap would otherwise leave a zone the size of a coin, which then
+    // reports nobody as ever being inside it.
+    if (span < 0.4) {
+      saveArea(chosen().id, { cornerA: undefined, cornerB: undefined });
+      status.textContent = `Too small \u2014 drag right across ${chosen().name}.`;
+      refreshZoneOverlay();
+      return;
+    }
+
+    saveArea(chosen().id, { cornerA: start, cornerB: point });
+    diag.info(`${chosen().name}: ${span.toFixed(1)}m across.`);
     refreshZoneOverlay();
 
-    if (next === 'cornerA') {
-      next = 'cornerB';
-      status.textContent = `Now tap the opposite corner of ${chosen().name}.`;
-    } else {
-      next = 'cornerA';
-      // Step to the next unplaced zone automatically: nineteen zones is a lot
-      // of dropdown, and the order on the plan is the order you would walk.
-      const remaining = AREAS.find((a) => !isPlaced(areaState(a.id)));
-      if (remaining) picker.value = remaining.id;
-      status.textContent = remaining
-        ? `Saved. Tap corner A of ${chosen().name}.`
-        : `All ${AREAS.length} zones placed.`;
-    }
+    // Step to the next unplaced zone: nineteen is a lot of dropdown, and the
+    // order on the plan is the order you would walk.
+    const remaining = AREAS.find((a) => !isPlaced(areaState(a.id)));
+    if (remaining) picker.value = remaining.id;
+    markPlaced();
+    status.textContent = remaining
+      ? `Saved. Now drag across ${chosen().name}.`
+      : `All ${AREAS.length} zones placed.`;
   });
 
   show();
