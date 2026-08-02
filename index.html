@@ -137,6 +137,16 @@
           <input id="trim-start" type="range" min="0" max="3" step="0.05" value="0.70" />
         </label>
 
+        <p class="group">Test model</p>
+        <label class="field" for="model-url">
+          <span>Model URL (.glb or .obj)</span>
+          <input id="model-url" type="url" placeholder="https://.../cube.glb" />
+        </label>
+        <div class="actions">
+          <button id="model-place" type="button">Place where I stand</button>
+          <button id="model-clear" type="button">Remove</button>
+        </div>
+
         <p class="group">Framing</p>
         <label class="slider" for="frame-width">
           <span>Frame width <output id="frame-width-value">100%</output></span>

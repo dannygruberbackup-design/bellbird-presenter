@@ -731,6 +731,54 @@ function wireAreaAuthoring(mpSdk: any): void {
     show();
   });
 
+  // Dropping a model into the space.
+  //
+  // Matterport ships loaders for glTF and OBJ, so the file is handed to their
+  // component rather than parsed here: their loader runs inside their renderer
+  // with their copy of three, which is the whole reason the presenter had to be
+  // built as a scene component in the first place.
+  let modelObject: any = null;
+
+  document.querySelector('#model-place')?.addEventListener('click', async () => {
+    const url = (document.querySelector('#model-url') as HTMLInputElement).value.trim();
+    const from = handles[0]?.component.viewerPosition();
+    if (!url || !from) {
+      diag.warn('Need a model URL and a position.');
+      return;
+    }
+
+    try {
+      modelObject?.stop?.();
+      const [object] = await mpSdk.Scene.createObjects(1);
+      const node = object.addNode();
+
+      // The cube's origin is the centre of its base, so it stands on the floor
+      // rather than sinking halfway into it.
+      const floorOffset = loadGlobal().floorOffset ?? DEFAULT_FLOOR_OFFSET;
+      (node.obj3D ?? node).position.set(from.x, from.y - floorOffset, from.z);
+
+      const isObj = url.toLowerCase().endsWith('.obj');
+      node.addComponent(isObj ? 'mp.objLoader' : 'mp.gltfLoader', { url });
+
+      // Their loaders light with the scene, and the scene has no lights of its
+      // own. Without this a correctly loaded model is a black silhouette, which
+      // looks exactly like a broken one.
+      node.addComponent('mp.lights');
+
+      object.start();
+      modelObject = object;
+      diag.info(`Model placed from ${url}.`);
+    } catch (error) {
+      diag.error(`Could not place the model: ${describeError(error)}`);
+    }
+  });
+
+  document.querySelector('#model-clear')?.addEventListener('click', () => {
+    modelObject?.stop?.();
+    modelObject = null;
+    diag.info('Model removed.');
+  });
+
   document.querySelector('#area-check')?.addEventListener('click', () => {
     const findings = checkZones(allSweeps());
     for (const finding of findings) diag[finding.level === 'ok' ? 'info' : finding.level](finding.text);
