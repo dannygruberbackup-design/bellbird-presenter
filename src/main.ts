@@ -14,7 +14,16 @@ import { initDiagnostics, diag, describeError } from './diagnostics';
 import { connectSdk } from './connect';
 import { saveVideo, loadVideo, clearVideo } from './video-store';
 import { subscribeSweeps, nearestSweep } from './sweeps';
-import { stationsFrom, goToStation, isInside, lookAt, type Station } from './stations';
+import { goToStation, lookAt } from './stations';
+import {
+  AREAS,
+  areaAt,
+  areaState,
+  saveArea,
+  placedAreas,
+  DEFAULT_AREA_RADIUS,
+  type Area,
+} from './areas';
 import { loadFor, saveFor, loadGlobal, saveGlobal, clearSettings } from './settings-store';
 
 const viewer = document.querySelector('matterport-viewer') as any;
@@ -302,69 +311,79 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
   const walkButton = document.querySelector('#walkthrough') as HTMLButtonElement;
   if (!panel || !toggle || !list) return;
 
-  let walking = false;
-  let rows: { station: Station; li: HTMLElement }[] = [];
+  let rows: { area: Area; li: HTMLElement; play: HTMLButtonElement }[] = [];
 
   const close = () => {
     panel.hidden = true;
     toggle.setAttribute('aria-expanded', 'false');
   };
 
-  // Travel, then speak. Two separate acts on the menu because they are two
-  // separate wants: "show me that area" and "tell me about it" are not the same
-  // request, and forcing them together means you cannot look around in peace.
-  const travel = async (station: Station) => {
+  const travel = async (area: Area) => {
+    const state = areaState(area.id);
+    if (!state.position) return;
     close();
-    await goToStation(mpSdk, station, () => {});
+    await goToStation(mpSdk, { handle: handles[0], label: area.name }, () => {}, state.position);
   };
 
-  const call = async (station: Station) => {
+  // Travel then speak, in one tap. The two-step is still there for anyone
+  // browsing — tap the name, look around, tap the guide when ready — but
+  // someone who already knows what they want should not have to tap twice for
+  // the same outcome.
+  const call = async (area: Area) => {
+    const state = areaState(area.id);
+    if (!state.position) return;
     close();
-    await goToStation(mpSdk, station, () => {
-      selected = handles.findIndex((h) => h.id === station.handle.id);
-      summon(director, mpSdk);
-    });
+    await goToStation(
+      mpSdk,
+      { handle: handles[0], label: area.name },
+      async () => {
+        await useAreaClip(area);
+        summon(director, mpSdk);
+      },
+      state.position,
+    );
   };
 
   const rebuild = () => {
     list.textContent = '';
-    rows = stationsFrom(handles, displayName).map((station) => {
+    rows = placedAreas().map(({ area }) => {
       const li = document.createElement('li');
 
       const go = document.createElement('button');
       go.type = 'button';
       go.className = 'go';
-      go.textContent = station.label;
-      go.addEventListener('click', () => {
-        walking = false;
-        void travel(station);
-      });
+      go.textContent = area.name;
+      go.addEventListener('click', () => void travel(area));
 
-      const guide = document.createElement('button');
-      guide.type = 'button';
-      guide.className = 'call';
-      guide.textContent = '\u25b6';
-      guide.title = `Bring the guide to ${station.label}`;
-      guide.setAttribute('aria-label', guide.title);
-      guide.addEventListener('click', () => {
-        walking = false;
-        void call(station);
-      });
+      const play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'call';
+      play.textContent = '\u25b6';
+      play.title = `Bring the guide to ${area.name}`;
+      play.setAttribute('aria-label', play.title);
+      play.addEventListener('click', () => void call(area));
 
-      li.append(go, guide);
+      li.append(go, play);
       list.appendChild(li);
-      return { station, li };
+      return { area, li, play };
     });
     paint();
   };
 
-  /** Lights the area the visitor is currently standing in. */
+  /** Lights the zone the visitor is standing in and readies its guide. */
   const paint = () => {
-    for (const row of rows) row.li.classList.toggle('here', isInside(row.station));
+    const from = handles[0]?.component.viewerPosition();
+    const here = from ? areaAt(from) : null;
+    for (const row of rows) {
+      const inside = here?.id === row.area.id;
+      row.li.classList.toggle('here', inside);
+      // Dimmed rather than disabled when you are elsewhere: it still works, so
+      // the decided visitor gets one tap, while the styling says plainly that
+      // this is the zone you are in and that one is not.
+      row.play.classList.toggle('ready', inside);
+    }
   };
 
-  // Painted on a timer rather than on every frame: the menu only has to keep up
-  // with walking, and a quarter of a second is imperceptible for that.
   window.setInterval(() => {
     if (!panel.hidden) paint();
   }, 250);
@@ -376,31 +395,46 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
     toggle.setAttribute('aria-expanded', String(opening));
   });
 
-  // The walkthrough is the same list played in order: travel, speak, wait for
-  // the clip to end, move on. Waiting on 'ended' rather than a timer means a
-  // long clip is never cut off and a short one never leaves a silent gap.
   walkButton?.addEventListener('click', async () => {
-    const stations = stationsFrom(handles, displayName);
-    if (stations.length === 0) return;
-
-    walking = true;
+    const stops = placedAreas();
+    if (stops.length === 0) return;
     close();
-    diag.info(`Walkthrough: ${stations.length} stops.`);
-
-    for (const station of stations) {
-      if (!walking) break;
-      await call(station);
-      await waitForClip(station.handle);
+    diag.info(`Walkthrough: ${stops.length} zones.`);
+    for (const { area } of stops) {
+      await call(area);
+      await waitForClip(handles[0]);
     }
-
-    walking = false;
     diag.info('Walkthrough finished.');
   });
 }
 
+/**
+ * Hands the guide the clip that belongs to this zone.
+ *
+ * One renderer, many zones: she is not nineteen people, she is one surface that
+ * plays whichever recording the place calls for.
+ */
+async function useAreaClip(area: Area): Promise<void> {
+  const handle = handles[0];
+  if (!handle) return;
+  if (lastClip === area.id) return;
+
+  const saved = await loadVideo(`area:${area.id}`);
+  if (!saved) {
+    diag.warn(`No clip for ${area.name} yet.`);
+    return;
+  }
+
+  handle.component.useVideo(URL.createObjectURL(saved.blob), area.name);
+  lastClip = area.id;
+}
+
+/** Which zone's clip is currently loaded, so it is not reloaded needlessly. */
+let lastClip: string | null = null;
+
 /** Resolves when a guide finishes speaking, or immediately if she cannot. */
 function waitForClip(handle: PresenterHandle): Promise<void> {
-  const video = handle.component.video;
+  const video = handle?.component.video;
   if (!video) return Promise.resolve();
 
   return new Promise((resolve) => {
@@ -409,7 +443,6 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
       resolve();
     };
     video.addEventListener('ended', done);
-    // A clip that never fires 'ended' must not strand the walkthrough forever.
     setTimeout(done, 60_000);
   });
 }
@@ -423,6 +456,84 @@ function waitForClip(handle: PresenterHandle): Promise<void> {
 // something gets fixed in the one you are looking at and not the other, and the
 // difference is only found by a visitor. This way the visitor view is simply
 // this view with the tools hidden.
+// Placing zones by standing in them.
+//
+// Nineteen zones tapped out one floor circle at a time is an evening's work and
+// an error every few minutes. Walking to a zone and pressing Place here is the
+// same information gathered the way the space actually reads — and it snaps to
+// the circle you are standing on, so the saved point is always somewhere a
+// visitor can be sent.
+function wireAreaAuthoring(): void {
+  const picker = document.querySelector('#area-pick') as HTMLSelectElement;
+  const place = document.querySelector('#area-place') as HTMLButtonElement;
+  const unplace = document.querySelector('#area-clear') as HTMLButtonElement;
+  const radius = document.querySelector('#area-radius') as HTMLInputElement;
+  const radiusOut = document.querySelector('#area-radius-value') as HTMLOutputElement;
+  const status = document.querySelector('#area-status') as HTMLElement;
+  const assign = document.querySelector('#area-video') as HTMLButtonElement;
+  if (!picker || !place) return;
+
+  for (const area of AREAS) {
+    const option = document.createElement('option');
+    option.value = area.id;
+    option.textContent = area.name;
+    picker.appendChild(option);
+  }
+
+  const current = () => AREAS.find((a) => a.id === picker.value) ?? AREAS[0];
+
+  const show = () => {
+    const area = current();
+    const state = areaState(area.id);
+    const reach = state.radius ?? DEFAULT_AREA_RADIUS;
+    radius.value = String(reach);
+    radiusOut.textContent = `${reach.toFixed(1)} m`;
+    status.textContent = state.position
+      ? `Placed. ${placedAreas().length} of ${AREAS.length} zones set.`
+      : `Not placed. ${placedAreas().length} of ${AREAS.length} zones set.`;
+  };
+
+  picker.addEventListener('change', show);
+
+  place.addEventListener('click', () => {
+    const from = handles[0]?.component.viewerPosition();
+    if (!from) {
+      diag.warn('No viewer position yet.');
+      return;
+    }
+    // Snap to the circle underfoot: the saved point has to be somewhere a
+    // visitor can actually stand, and that is exactly what a circle is.
+    const circle = nearestSweep(from, 3);
+    const point = circle ? { x: circle.x, y: circle.y, z: circle.z } : from;
+    saveArea(current().id, { position: point, radius: Number(radius.value) });
+    diag.info(`${current().name}: placed.`);
+    show();
+  });
+
+  unplace.addEventListener('click', () => {
+    saveArea(current().id, { position: undefined });
+    diag.info(`${current().name}: unplaced.`);
+    show();
+  });
+
+  radius.addEventListener('input', () => {
+    const reach = Number(radius.value);
+    radiusOut.textContent = `${reach.toFixed(1)} m`;
+    saveArea(current().id, { radius: reach });
+  });
+
+  assign.addEventListener('click', () => {
+    const input = document.querySelector('#video-file') as HTMLInputElement;
+    assigningTo = current().id;
+    input.click();
+  });
+
+  show();
+}
+
+/** Set while a file picker is open on behalf of a zone rather than the guide. */
+let assigningTo: string | null = null;
+
 function wireRoleToggle(): void {
   const button = document.querySelector('#role-toggle') as HTMLButtonElement;
   if (!button) return;
@@ -442,6 +553,7 @@ function wireRoleToggle(): void {
 function enableDevTools(mpSdk: any, director: ReturnType<typeof createDirector>) {
   devPanel.hidden = false;
   wireRoleToggle();
+  wireAreaAuthoring();
 
   const placement = createPlacementMode(
     mpSdk,
@@ -931,6 +1043,23 @@ function wireVideoPicker(director: ReturnType<typeof createDirector>, onMoved: (
     const file = input.files?.[0];
     const handle = current();
     if (!file || !handle) return;
+
+    const target = assigningTo;
+    assigningTo = null;
+
+    if (target) {
+      // Stored against the zone, not the renderer: the clip belongs to the
+      // place it describes, and she is only the surface that plays it.
+      try {
+        await saveVideo(`area:${target}`, file);
+        saveArea(target, { hasVideo: true });
+        diag.info(`Clip stored for ${target}.`);
+      } catch (error) {
+        diag.warn(`Could not store the clip: ${describeError(error)}`);
+      }
+      input.value = '';
+      return;
+    }
 
     diag.info(`${handle.id}: loading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
     handle.component.useVideo(URL.createObjectURL(file), file.name);

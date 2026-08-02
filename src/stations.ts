@@ -42,8 +42,9 @@ export async function goToStation(
   mpSdk: any,
   station: Station,
   onArrived: () => void,
+  destination?: { x: number; y: number; z: number },
 ): Promise<void> {
-  const position = station.handle.getPosition();
+  const position = destination ?? station.handle.getPosition();
   const circle = nearestSweep(position, 6);
 
   if (circle?.sid && mpSdk?.Sweep?.moveTo) {

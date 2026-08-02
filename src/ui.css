@@ -29,6 +29,8 @@ matterport-viewer { display:block; width:100vw; height:100dvh; }
 #dev-panel button[aria-pressed='true'] { border-color:var(--tally); }
 .field { display:block; margin-bottom:0.5rem; }
 .field > span { display:block; margin-bottom:0.25rem; font-size:0.74rem; color:rgba(232,230,225,0.78); }
+.field select { width:100%; min-height:38px; padding:0.35rem 0.5rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:var(--ink); color:var(--mist); font:500 0.82rem var(--ui-sans); }
+#area-status { margin:0 0 0.4rem; font-size:0.72rem; }
 .field input { width:100%; min-height:38px; padding:0.35rem 0.6rem; border:1px solid rgba(232,230,225,0.22); border-radius:6px; background:transparent; color:var(--mist); font:500 0.82rem var(--ui-sans); }
 .field input:focus-visible { outline:2px solid var(--tally); outline-offset:2px; }
 .field.swatch input[type='color'] { width:100%; height:38px; padding:2px; cursor:pointer; }
@@ -55,6 +57,10 @@ body.placement-active::after { content:""; position:fixed; inset:0; border:2px s
    project's "on air" colour, so it needs no explaining. */
 #station-list li.here .go { border-color:var(--tally); color:#fff; background:rgba(224,54,44,0.16); }
 #station-list li.here .call { border-color:var(--tally); }
+/* Dimmed, not disabled: it still works from anywhere, but the styling says
+   plainly which zone you are standing in. */
+#station-list .call { opacity:0.45; }
+#station-list .call.ready { opacity:1; }
 #walkthrough { border-color:var(--tally) !important; text-align:center !important; margin-top:0.4rem; }
 #station-list:empty::after { content:"No stops placed yet."; display:block; font-size:0.78rem; color:rgba(232,230,225,0.55); }
 #diag-panel { position:fixed; left:0.75rem; right:0.75rem; bottom:0.75rem; max-height:34vh; display:flex; flex-direction:column; border:1px solid rgba(232,230,225,0.18); border-radius:10px; background:rgba(11,15,20,0.94); backdrop-filter:blur(14px); z-index:60; }

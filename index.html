@@ -54,6 +54,24 @@
           <button id="toggle-visible" type="button" aria-pressed="true">Visible</button>
         </div>
 
+        <p class="group">Areas</p>
+        <label class="field" for="area-pick">
+          <span>Zone</span>
+          <select id="area-pick"></select>
+        </label>
+        <div class="actions">
+          <button id="area-place" type="button">Place here</button>
+          <button id="area-clear" type="button">Unplace</button>
+        </div>
+        <label class="slider" for="area-radius">
+          <span>Zone reach <output id="area-radius-value">3.0 m</output></span>
+          <input id="area-radius" type="range" min="1" max="10" step="0.2" value="3" />
+        </label>
+        <div class="actions">
+          <button id="area-video" type="button">Assign clip to zone</button>
+        </div>
+        <p class="hint" id="area-status">Walk to a zone, then Place here.</p>
+
         <p class="group">Placement</p>
         <div class="actions">
           <button id="dev-toggle" type="button" aria-pressed="false">Placement mode</button>

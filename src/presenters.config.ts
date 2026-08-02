@@ -68,25 +68,16 @@ const MEASURED = {
   brightness: 1.15,
 };
 
+// One renderer.
+//
+// She used to be four, because a presenter was also a place. The zone map has
+// nineteen places, and nineteen chroma planes each with its own video element
+// is not something an iPad should be asked to hold. Areas are data now; she is
+// the single surface that gets moved to wherever she is wanted.
 export const PRESENTERS: Placement[] = [
   {
     id: 'Presenter 1',
     position: { x: 1.24, y: -0.05, z: -5.448 },
     inputs: { src: 'test', visible: true, ...MEASURED },
-  },
-  {
-    id: 'Presenter 2',
-    position: { x: 0, y: 0, z: 0 },
-    inputs: { src: 'test', visible: false, ...MEASURED },
-  },
-  {
-    id: 'Presenter 3',
-    position: { x: 0, y: 0, z: 0 },
-    inputs: { src: 'test', visible: false, ...MEASURED },
-  },
-  {
-    id: 'Presenter 4',
-    position: { x: 0, y: 0, z: 0 },
-    inputs: { src: 'test', visible: false, ...MEASURED },
   },
 ];
