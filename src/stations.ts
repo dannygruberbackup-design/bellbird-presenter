@@ -88,7 +88,9 @@ export async function lookAt(
 ): Promise<void> {
   const yaw = (Math.atan2(-(target.x - from.x), -(target.z - from.z)) * 180) / Math.PI;
   try {
-    await mpSdk?.Camera?.setRotation?.({ x: 0, y: yaw }, { speed: 60 });
+    // Brisk rather than leisurely: this runs while the move is still settling,
+    // and a slow turn on top of a finished journey reads as a second event.
+    await mpSdk?.Camera?.setRotation?.({ x: 0, y: yaw }, { speed: 100 });
   } catch {
     // Older bundles expose rotate() instead; not worth failing the summon over.
     diag.warn('Could not turn the camera.');
@@ -147,25 +149,33 @@ export async function goToAuthoredView(mpSdk: any, state: AreaState): Promise<bo
   if (!state.viewSweep || !mpSdk?.Sweep?.moveTo) return false;
 
   const transition = mpSdk?.Sweep?.Transition?.FLY ?? 'transition.fly';
+  const rotation = { x: state.viewPitch ?? 0, y: state.viewYaw ?? 0 };
+
+  // Rotation handed to moveTo rather than applied after it. Travelling and then
+  // turning is two journeys - you arrive facing the wrong way and the room
+  // swings round afterwards, which feels like a correction rather than an
+  // arrival. Given the heading up front, the move and the turn are one motion
+  // and you land already looking at the thing you asked for.
   try {
-    await mpSdk.Sweep.moveTo(state.viewSweep, { transition, transitionTime: 1400 });
+    await mpSdk.Sweep.moveTo(state.viewSweep, { transition, transitionTime: 1400, rotation });
+    return true;
   } catch {
+    // Older bundles do not take a rotation here. Starting the turn alongside
+    // the move still overlaps them, which is most of the benefit.
     try {
-      await mpSdk.Sweep.moveTo(state.viewSweep);
-    } catch (error) {
-      diag.warn(`Could not reach the captured view: ${String(error)}`);
-      return false;
+      const moving = mpSdk.Sweep.moveTo(state.viewSweep, { transition, transitionTime: 1400 });
+      const turning = mpSdk?.Camera?.setRotation?.(rotation, { speed: 100 });
+      await Promise.all([moving, turning].filter(Boolean));
+      return true;
+    } catch {
+      try {
+        await mpSdk.Sweep.moveTo(state.viewSweep);
+        await mpSdk?.Camera?.setRotation?.(rotation, { speed: 100 });
+        return true;
+      } catch (error) {
+        diag.warn(`Could not reach the captured view: ${String(error)}`);
+        return false;
+      }
     }
   }
-
-  try {
-    await mpSdk?.Camera?.setRotation?.(
-      { x: state.viewPitch ?? 0, y: state.viewYaw ?? 0 },
-      { speed: 80 },
-    );
-  } catch {
-    diag.warn('Arrived, but could not turn to the captured heading.');
-  }
-
-  return true;
 }

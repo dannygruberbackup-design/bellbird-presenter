@@ -336,10 +336,13 @@ function wireStations(mpSdk: any, director: ReturnType<typeof createDirector>) {
       mpSdk,
       { handle: handles[0], label: area.name },
       () => {
-        // Arriving is only half of it. The sweep nearest a zone is often beside
-        // or behind the display, so landing there without turning leaves you
-        // looking at whatever the last camera angle happened to be - which,
-        // having just asked to be taken to Music, is not Music.
+        // Arriving is only half of it: the sweep nearest a zone is often beside
+        // or behind the display, so landing without turning leaves you looking
+        // at whatever the last camera angle happened to be - which, having just
+        // asked to be taken to Music, is not Music.
+        //
+        // Deliberately not awaited, so the turn overlaps the tail of the move
+        // rather than beginning once it has stopped.
         const from = handles[0]?.component.viewerPosition();
         if (from) void lookAt(mpSdk, centre, from);
       },
