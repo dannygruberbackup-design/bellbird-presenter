@@ -111,8 +111,13 @@ function makeShadowTexture(THREE: any): any {
     size / 2, size / 2, 0,
     size / 2, size / 2, size / 2,
   );
-  gradient.addColorStop(0, 'rgba(0,0,0,0.45)');
-  gradient.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+  // The gradient carries its own falloff and the Depth control scales it, so
+  // the two multiply: a peak of 0.45 at 30% depth was 13% opacity, which is
+  // invisible on a pale tiled floor. Peaking at full black lets Depth mean what
+  // it says - 30% is 30% - and keeps the whole range useful.
+  gradient.addColorStop(0, 'rgba(0,0,0,1)');
+  gradient.addColorStop(0.4, 'rgba(0,0,0,0.55)');
+  gradient.addColorStop(0.75, 'rgba(0,0,0,0.15)');
   gradient.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, size, size);
@@ -245,10 +250,18 @@ export class ChromaPresenterComponent {
       opacity: this.inputs.shadowOpacity,
       depthWrite: false,
       toneMapped: false,
+      // The scanned floor is a mesh, not a mathematical plane: it undulates by
+      // a centimetre or two. A shadow laid flat a hair above it will be below
+      // it somewhere, and there it simply vanishes. The polygon offset biases
+      // it towards the camera in depth without moving it in space, so it stays
+      // on the floor rather than hovering to stay visible.
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
     });
     this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shadowMat);
     this.shadow.rotation.x = -Math.PI / 2;
-    this.shadow.position.y = 0.015;
+    this.shadow.position.y = 0.02;
     this.shadow.renderOrder = 9;
     this.root.add(this.shadow);
     this.applyShadow();
