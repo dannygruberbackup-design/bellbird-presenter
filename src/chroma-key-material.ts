@@ -85,12 +85,26 @@ const fragmentShader =  `
     );
     vec4 texel = texture2D(uMap, uv);
 
+    // Chroma is stored at half resolution in H.264 (4:2:0), and this key is a
+    // chroma decision, so its edges inherit that half-resolution blockiness -
+    // stair-stepping along hair and shoulders that is not in the source colour
+    // at all. Averaging the chroma of the immediate neighbourhood undoes most
+    // of it. Luma is deliberately left alone: it is stored at full resolution
+    // and blurring it would soften the picture to fix an edge.
+    vec2 texel_size = vec2(dFdx(uv.x), dFdy(uv.y));
+    vec2 chroma =
+      (rgbToCbCr(texture2D(uMap, uv + vec2(texel_size.x, 0.0)).rgb) +
+       rgbToCbCr(texture2D(uMap, uv - vec2(texel_size.x, 0.0)).rgb) +
+       rgbToCbCr(texture2D(uMap, uv + vec2(0.0, texel_size.y)).rgb) +
+       rgbToCbCr(texture2D(uMap, uv - vec2(0.0, texel_size.y)).rgb) +
+       rgbToCbCr(texel.rgb) * 2.0) / 6.0;
+
     float luma = dot(texel.rgb, vec3(0.2126, 0.7152, 0.0722));
 
     // Hue distance, plus a share of the brightness difference. The second term
     // rescues dark clothing that has picked up screen spill: it is the wrong
     // hue to survive on chroma alone, but far too dark to be the screen.
-    float chromaDist = distance(rgbToCbCr(texel.rgb), rgbToCbCr(uKeyColor))
+    float chromaDist = distance(chroma, rgbToCbCr(uKeyColor))
                      + uLumaWeight * abs(luma - uKeyLuma);
 
     // Distance beyond the key radius, before softening.

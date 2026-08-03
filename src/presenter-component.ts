@@ -214,6 +214,11 @@ export class ChromaPresenterComponent {
     this.texture.minFilter = THREE.LinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
     this.texture.generateMipmaps = false;
+    // Anisotropic filtering. She is a flat plane and a visitor almost never
+    // looks at her square on, and at an angle a texture sampled without it
+    // smears along the direction of view - which is most of why she looks
+    // softer in the room than the same file does in a video player.
+    this.texture.anisotropy = 8;
     setNoColorConversion(THREE, this.texture);
 
     this.material = RAW_TEXTURE
@@ -279,6 +284,11 @@ export class ChromaPresenterComponent {
     this.texture.minFilter = THREE.LinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
     this.texture.generateMipmaps = false;
+    // Anisotropic filtering. She is a flat plane and a visitor almost never
+    // looks at her square on, and at an angle a texture sampled without it
+    // smears along the direction of view - which is most of why she looks
+    // softer in the room than the same file does in a video player.
+    this.texture.anisotropy = 8;
     setNoColorConversion(THREE, this.texture);
 
     if (this.material.uniforms) this.material.uniforms.uMap.value = this.texture;
