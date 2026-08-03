@@ -211,13 +211,21 @@ export class ChromaPresenterComponent {
     } else {
       this.texture = new THREE.VideoTexture(this.video);
     }
-    this.texture.minFilter = THREE.LinearFilter;
+    // Mipmaps, and they are the point rather than a refinement.
+    //
+    // She is drawn far smaller than her source: a 1080-tall clip filling maybe
+    // 350 pixels of screen is a threefold reduction, and sampling one texel per
+    // pixel from a picture three times too big is exactly how detail turns to
+    // mush. It is the same softness you get scaling a photo down in a browser
+    // rather than in an image editor.
+    //
+    // three leaves these off for video because regenerating them every frame
+    // costs something. For one clip at a time that cost is worth paying, and
+    // anisotropic filtering does nothing without them - the two only work as a
+    // pair, which is why the previous change alone did not help.
+    this.texture.minFilter = THREE.LinearMipmapLinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
-    this.texture.generateMipmaps = false;
-    // Anisotropic filtering. She is a flat plane and a visitor almost never
-    // looks at her square on, and at an angle a texture sampled without it
-    // smears along the direction of view - which is most of why she looks
-    // softer in the room than the same file does in a video player.
+    this.texture.generateMipmaps = true;
     this.texture.anisotropy = 8;
     setNoColorConversion(THREE, this.texture);
 
@@ -281,13 +289,21 @@ export class ChromaPresenterComponent {
 
     this.texture?.dispose();
     this.texture = new THREE.VideoTexture(this.video);
-    this.texture.minFilter = THREE.LinearFilter;
+    // Mipmaps, and they are the point rather than a refinement.
+    //
+    // She is drawn far smaller than her source: a 1080-tall clip filling maybe
+    // 350 pixels of screen is a threefold reduction, and sampling one texel per
+    // pixel from a picture three times too big is exactly how detail turns to
+    // mush. It is the same softness you get scaling a photo down in a browser
+    // rather than in an image editor.
+    //
+    // three leaves these off for video because regenerating them every frame
+    // costs something. For one clip at a time that cost is worth paying, and
+    // anisotropic filtering does nothing without them - the two only work as a
+    // pair, which is why the previous change alone did not help.
+    this.texture.minFilter = THREE.LinearMipmapLinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
-    this.texture.generateMipmaps = false;
-    // Anisotropic filtering. She is a flat plane and a visitor almost never
-    // looks at her square on, and at an angle a texture sampled without it
-    // smears along the direction of view - which is most of why she looks
-    // softer in the room than the same file does in a video player.
+    this.texture.generateMipmaps = true;
     this.texture.anisotropy = 8;
     setNoColorConversion(THREE, this.texture);
 

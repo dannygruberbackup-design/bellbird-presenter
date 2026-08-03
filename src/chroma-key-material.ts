@@ -122,7 +122,14 @@ const fragmentShader =  `
 
     // Exposure before the colour-space step, so it behaves like a light on her
     // rather than a wash over the final pixel.
-    rgb = clamp(rgb * uBrightness, 0.0, 1.0);
+    // Brightness as a gamma curve, not a multiply.
+    //
+    // Multiplying scales everything: at 112% a black trouser leg at 0.05
+    // becomes 0.056 and mid-tones climb with it, so the whole picture lifts and
+    // the blacks go grey - which is exactly the washed-out look of a photocopy.
+    // A gamma curve pins black at black and white at white and moves only what
+    // lies between, so she gets brighter without losing her contrast.
+    rgb = pow(clamp(rgb, 0.0, 1.0), vec3(1.0 / max(uBrightness, 0.01)));
 
     rgb = mix(rgb, sRGBToLinear(rgb), uConvertToLinear);
 
