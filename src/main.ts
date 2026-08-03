@@ -210,6 +210,32 @@ function applySavedSettings() {
 // Frame width is expressed as "how much of the source is kept", centred,
 // because the subject sits in the middle of a generated plate. Trims are per
 // edge because feet and headroom are never symmetric.
+/**
+ * Clears the framing when a new clip is loaded.
+ *
+ * Framing belongs to a clip, not to the slot that plays it. Trimming a
+ * landscape frame down to a third to find the presenter is right for that file
+ * and nonsense for the next one - and it applies silently, so a properly framed
+ * vertical clip arrives already cut to a third of its width with nothing on
+ * screen to say why.
+ *
+ * Height is deliberately left alone: that is how tall she is in the room, which
+ * does not change because the file did.
+ */
+function resetFramingFor(handle: PresenterHandle): void {
+  saveFor(handle.id, { frameWidth: 1, cropTop: 0, cropBottom: 0, groundOffset: 0 });
+  handle.component.setCrop(0, 0, 0, 0);
+  handle.component.setGroundOffset(0);
+
+  // The sliders have to follow, or they show a third of a frame while the
+  // presenter shows all of it, and the next drag snaps back to the stale value.
+  setSlider('#frame-width', '#frame-width-value', 1, pct);
+  setSlider('#crop-top', '#crop-top-value', 0, pct);
+  setSlider('#crop-bottom', '#crop-bottom-value', 0, pct);
+  setSlider('#ground-offset', '#ground-offset-value', 0, (v) => `${v.toFixed(2)} m`);
+  diag.info('Framing reset for the new clip.');
+}
+
 function applyFraming(handle: PresenterHandle, saved: ReturnType<typeof loadFor>) {
   const kept = saved.frameWidth ?? 1;
   const side = (1 - kept) / 2;
@@ -1584,6 +1610,7 @@ function wireVideoPicker(director: ReturnType<typeof createDirector>, onMoved: (
     }
 
     diag.info(`${handle.id}: loading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
+    resetFramingFor(handle);
     handle.component.useVideo(URL.createObjectURL(file), file.name);
     handle.component.setVisible(true);
     saveFor(handle.id, { visible: true });
